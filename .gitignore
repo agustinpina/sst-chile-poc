@@ -1,0 +1,26 @@
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+explore.nbconvert.ipynb
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
+
+# Credenciales y env
+.env
+.envrc
+
+# Notas: las carpetas data/runs/ y figures/runs/ SÍ se commitean
+# (la GitHub Action las publica al repo cada trimestre)

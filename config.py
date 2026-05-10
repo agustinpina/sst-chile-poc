@@ -39,7 +39,9 @@ FRECUENCIA_RECOMENDADA = "trimestral (Q1/Q2/Q3/Q4)"
 # Regiones de interés (zonas salmonicultoras de Chile)
 # ---------------------------------------------------------------------------
 REGIONES = {
-    "los_lagos":  {"lat": [-42.5, -41.0], "lon": [-73.5, -72.0]},
-    "aysen":      {"lat": [-45.5, -43.5], "lon": [-74.5, -72.5]},
-    "magallanes": {"lat": [-53.0, -50.0], "lon": [-74.5, -71.5]},
+    # Límites oficiales de cada región administrativa
+    # Conversión de grados°minutos' a decimal: dd + mm/60
+    "los_lagos":  {"lat": [-44.05, -40.22], "lon": [-74.82, -71.57]},  # 40°13'–44°03' S, 74°49'–71°34' W
+    "aysen":      {"lat": [-49.27, -43.63], "lon": [-75.50, -71.10]},  # 43°38'–49°16' S, hasta el Pacífico
+    "magallanes": {"lat": [-56.50, -48.60], "lon": [-75.67, -66.42]},  # 48°36'–56°30' S, 75°40'–66°25' W
 }

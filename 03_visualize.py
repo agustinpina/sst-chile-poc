@@ -1,8 +1,8 @@
 """
-Genera tres figuras a 150 dpi en figures/runs/{RUN_ID}/:
-  fig1_serie_anual.png      → series anuales + tendencia por región
-  fig2_ciclo_estacional.png → climatología mensual con banda ±1 SD
-  fig3_mapa_promedio.png    → mapa SST últimos 5 años por región (Cartopy)
+Genera figuras a 150 dpi en figures/runs/{RUN_ID}/:
+  fig1_serie_anual.png           → series anuales + tendencia por región
+  fig2_ciclo_estacional.png      → climatología mensual con banda ±1 SD
+  fig3_mapa_{region}.png (×3)    → mapa SST por región en figura separada
 """
 import sys
 
@@ -100,43 +100,50 @@ def figura_ciclo_estacional(df_mensual):
     print(f"   ✓ {salida}")
 
 
-def figura_mapa_promedio():
-    anio_inicio_mapa = ANIO_FIN - 4
-    fig, axes = plt.subplots(
-        1, len(REGIONES), figsize=(15, 6),
+def figura_mapa_region(nombre, bbox):
+    """Genera un mapa SST promedio para una región, usando los años reales del NetCDF."""
+    archivo = DATA_DIR / f"{nombre}_sst.nc"
+    if not archivo.exists():
+        print(f"   ✗ No existe {archivo}, saltando.")
+        return
+
+    ds = xr.open_dataset(archivo)
+    sst = ds[VARIABLE] - 273.15
+
+    # Rango de años real en el archivo (no depende de FECHA_FIN)
+    anio_inicio_datos = int(str(ds.time.values[0])[:4])
+    anio_fin_datos = int(str(ds.time.values[-1])[:4])
+
+    sst_promedio = sst.mean(dim="time", skipna=True)
+
+    fig, ax = plt.subplots(
+        figsize=(8, 7),
         subplot_kw={"projection": ccrs.PlateCarree()},
     )
-    if len(REGIONES) == 1:
-        axes = [axes]
+    im = sst_promedio.plot(
+        ax=ax, cmap="RdYlBu_r", vmin=8, vmax=18,
+        transform=ccrs.PlateCarree(), add_colorbar=False,
+    )
+    ax.coastlines(resolution="10m")
+    ax.add_feature(cfeature.LAND, facecolor="lightgray", zorder=0)
+    ax.add_feature(cfeature.BORDERS, linestyle=":", zorder=1)
+    ax.gridlines(draw_labels=True, alpha=0.3)
+    fig.colorbar(im, ax=ax, label="SST (°C)", shrink=0.8, pad=0.08)
+    ax.set_title(
+        f"SST media {anio_inicio_datos}–{anio_fin_datos}\n{nombre.replace('_', ' ').title()}",
+        fontsize=13,
+    )
+    ds.close()
 
-    im = None
-    for ax, (nombre, bbox) in zip(axes, REGIONES.items()):
-        archivo = DATA_DIR / f"{nombre}_sst.nc"
-        if not archivo.exists():
-            ax.set_title(f"{nombre}: sin datos")
-            continue
-        ds = xr.open_dataset(archivo)
-        sst = ds[VARIABLE] - 273.15
-        sst_recortado = sst.sel(time=slice(f"{anio_inicio_mapa}-01-01", FECHA_FIN))
-        sst_promedio = sst_recortado.mean(dim="time", skipna=True)
-        im = sst_promedio.plot(
-            ax=ax, cmap="RdYlBu_r", vmin=8, vmax=18,
-            transform=ccrs.PlateCarree(), add_colorbar=False,
-        )
-        ax.coastlines(resolution="10m")
-        ax.add_feature(cfeature.BORDERS, linestyle=":")
-        ax.gridlines(draw_labels=True, alpha=0.3)
-        ax.set_title(nombre)
-        ds.close()
-
-    fig.suptitle(f"SST media {anio_inicio_mapa}–{ANIO_FIN} por zona", fontsize=14)
-    if im is not None:
-        cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
-        fig.colorbar(im, cax=cbar_ax, label="SST (°C)")
-    salida = FIGURES_DIR / "fig3_mapa_promedio.png"
+    salida = FIGURES_DIR / f"fig3_mapa_{nombre}.png"
     fig.savefig(salida, dpi=DPI, bbox_inches="tight")
     plt.close(fig)
     print(f"   ✓ {salida}")
+
+
+def figura_mapas_por_region():
+    for nombre, bbox in REGIONES.items():
+        figura_mapa_region(nombre, bbox)
 
 
 def main():
@@ -145,7 +152,7 @@ def main():
     df_mensual = cargar_csv_mensual_combinado()
     figura_serie_anual(df_anual)
     figura_ciclo_estacional(df_mensual)
-    figura_mapa_promedio()
+    figura_mapas_por_region()
     print(f"\n✅ Figuras en {FIGURES_DIR}")
 
 

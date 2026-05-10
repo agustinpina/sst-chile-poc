@@ -13,22 +13,26 @@ El proyecto debe ser **actualizable**: cada vez que se ejecuta genera una carpet
 
 ## Contexto de datos
 
-- **Producto:** OSTIA SST L4 (`SST_GLO_SST_L4_REP_OBSERVATIONS_010_011`)
-- **Variable:** `analysed_sst` (convertir de Kelvin a Celsius)
-- **Período:** `1993-01-01` hasta el último día del mes anterior a hoy (dinámico)
-- **Resolución:** 0.05° (~5 km)
+- **Producto:** OSTIA SST L4 (`METOFFICE-GLO-SST-L4-REP-OBS-SST`, versión `202003`)
+  - ⚠️ El ID legacy `SST_GLO_SST_L4_REP_OBSERVATIONS_010_011` ya no existe en el catálogo.
+- **Variable:** `analysed_sst` (convertir de Kelvin a Celsius: restar 273.15)
+- **Cobertura del dataset:** 1981-10-01 → 2025-12-18 (producto reprocessado, no NRT)
+- **Período de descarga:** `1993-01-01` hasta `2025-12-18` como máximo
+- **Resolución:** 0.05° (~5.5 km), 1 dato por día
 
 ---
 
 ## Regiones de interés
 
-Definir en `config.py` como diccionario:
+Definir en `config.py` como diccionario, usando los límites oficiales de cada región administrativa chilena:
 
 ```python
 REGIONES = {
-    "los_lagos":  {"lat": [-42.5, -41.0], "lon": [-73.5, -72.0]},
-    "aysen":      {"lat": [-45.5, -43.5], "lon": [-74.5, -72.5]},
-    "magallanes": {"lat": [-53.0, -50.0], "lon": [-74.5, -71.5]},
+    # Límites oficiales de cada región administrativa
+    # Conversión de grados°minutos' a decimal: dd + mm/60
+    "los_lagos":  {"lat": [-44.05, -40.22], "lon": [-74.82, -71.57]},  # 40°13'–44°03' S, 74°49'–71°34' W
+    "aysen":      {"lat": [-49.27, -43.63], "lon": [-75.50, -71.10]},  # 43°38'–49°16' S, hasta el Pacífico
+    "magallanes": {"lat": [-56.50, -48.60], "lon": [-75.67, -70.00]},  # 48°36'–56°30' S, costa chilena hasta ~70°W
 }
 ```
 
@@ -39,6 +43,7 @@ REGIONES = {
 ```
 sst-chile-poc/
 ├── PROMPT_SST_CHILE_POC.md     ← este archivo
+├── CLAUDE.md                   ← guía para Claude Code
 ├── config.py
 ├── 01_download.py
 ├── 02_process.py
@@ -58,10 +63,12 @@ sst-chile-poc/
 │           └── run_log.txt
 └── figures/
     └── runs/
-        └── {run_id}/           ← mismo run_id
+        └── {run_id}/
             ├── fig1_serie_anual.png
             ├── fig2_ciclo_estacional.png
-            └── fig3_mapa_promedio.png
+            ├── fig3_mapa_los_lagos.png
+            ├── fig3_mapa_aysen.png
+            └── fig3_mapa_magallanes.png
 ```
 
 ---
@@ -70,12 +77,12 @@ sst-chile-poc/
 
 - `FECHA_INICIO` fija: `"1993-01-01"`
 - `FECHA_FIN` dinámica: último día del mes anterior a hoy
-  (si hoy es 9 mayo 2026 → `FECHA_FIN = "2026-04-30"`)
+  (si hoy es 10 mayo 2026 → `FECHA_FIN = "2026-04-30"`, pero el dataset REP solo llega a `2025-12-18`)
 - `RUN_ID = f"{año_actual}-{mes_actual:02d}"` → `"2026-05"`
 - `DATA_DIR  = Path(f"data/runs/{RUN_ID}/")`
 - `FIGURES_DIR = Path(f"figures/runs/{RUN_ID}/")`
 - Crear ambos directorios con `pathlib .mkdir(parents=True, exist_ok=True)`
-- `DATASET_ID = "SST_GLO_SST_L4_REP_OBSERVATIONS_010_011"`
+- `DATASET_ID = "METOFFICE-GLO-SST-L4-REP-OBS-SST"`
 - `VARIABLE = "analysed_sst"`
 - `FRECUENCIA_RECOMENDADA = "trimestral (Q1/Q2/Q3/Q4)"`
 
@@ -97,7 +104,7 @@ sst-chile-poc/
   - Tamaño de cada archivo `.nc` descargado
   - Versión del producto Copernicus usado
 - Manejo de errores con `try/except`, mensajes claros en consola
-- Flag opcional `--test` que descarga solo 2 años (2023–2024) para validar el pipeline sin descargar la serie completa
+- Flag opcional `--test` que descarga solo 2023–2024 para validar el pipeline sin descargar la serie completa
 
 ---
 
@@ -117,13 +124,13 @@ sst-chile-poc/
 
 ## 03_visualize.py
 
-Generar 3 figuras en `figures/runs/{run_id}/` a 150 dpi:
+Generar 5 figuras en `figures/runs/{run_id}/` a 150 dpi:
 
-### Fig 1 — Serie temporal anual (1993 → FECHA_FIN)
+### Fig 1 — Serie temporal anual (1993 → último año disponible)
 - Una línea por región, colores diferenciados, leyenda
 - Línea de tendencia lineal (`scipy.stats.linregress`) por región
 - Anotar pendiente en la leyenda: `"+X.XX °C/década"`
-- Título dinámico: `f"SST media anual – zonas salmonicultoras Chile (1993–{año_fin})"`
+- Título dinámico basado en años reales de los datos
 
 ### Fig 2 — Ciclo estacional (climatología mensual)
 - Media mensual por región (promedio todos los años)
@@ -131,58 +138,48 @@ Generar 3 figuras en `figures/runs/{run_id}/` a 150 dpi:
 - Eje X: meses (Ene–Dic), eje Y: °C
 - Título: `"Ciclo estacional SST – zonas salmonicultoras Chile"`
 
-### Fig 3 — Mapa SST promedio (últimos 5 años desde FECHA_FIN)
-- Un panel por región usando Cartopy
+### Fig 3 — Mapa SST promedio por región (3 archivos separados)
+- **Un PNG por región**: `fig3_mapa_los_lagos.png`, `fig3_mapa_aysen.png`, `fig3_mapa_magallanes.png`
+- Promedio de todo el período disponible en el NetCDF
+- **Título derivado de las fechas reales del NetCDF** (no de `FECHA_FIN`):
+  `f"SST media {anio_inicio_datos}–{anio_fin_datos}\n{nombre}"`
 - Colormap: `'RdYlBu_r'`, rango 8–18°C
-- Coastline, gridlines, colorbar
-- Título dinámico: `f"SST media {año_fin-4}–{año_fin} por zona"`
+- Coastline, land feature en gris, gridlines con etiquetas, colorbar integrada
+- Cartopy `PlateCarree`, figsize=(8, 7)
 
 ---
 
 ## Notebook de exploración: explore.ipynb
 
-Crear un notebook Jupyter con las siguientes secciones como celdas markdown + código:
+Notebook Jupyter con las siguientes secciones:
 
 ### Celda 0 — Setup
-- Importar desde `config.py` (no redefinir constantes):
+- Importar desde `config.py`:
   ```python
   from config import DATA_DIR, FIGURES_DIR, REGIONES, FECHA_FIN, RUN_ID
   ```
-- Imports estándar: `xarray`, `pandas`, `matplotlib`, `pathlib`
+- Imports: `xarray`, `pandas`, `matplotlib`, `pathlib`
 
 ### Celda 1 — Selección de run
 - Listar automáticamente los runs disponibles en `data/runs/`
-- Cargar el más reciente por defecto:
-  ```python
-  runs_disponibles = sorted(Path("data/runs/").iterdir())
-  run_a_explorar = runs_disponibles[-1]
-  ```
+- Cargar el más reciente por defecto
 
 ### Celda 2 — Inspección del NetCDF
 - Cargar los 3 archivos `.nc` del run seleccionado
-- Mostrar: dimensiones, coordenadas, rango de fechas, valores min/max/mean
-- Identificar valores faltantes (NaN) por región
+- Mostrar: dimensiones, rango de fechas, valores min/max/mean, NaN por región
 
 ### Celda 3 — Visualización rápida de serie temporal
-- Plot interactivo de SST media mensual por región
-- Sin formato final, solo para exploración rápida
+- Plot SST media mensual por región (sin formato final)
 
 ### Celda 4 — Exploración de anomalías
-- Calcular anomalía respecto a climatología (1993–2010 como baseline)
+- Climatología baseline 1993–2010
 - Identificar meses con anomalía > +2°C o < -2°C
-- Mostrar como tabla y como plot
+- Tabla y plot
 
 ### Celda 5 — Sandbox libre
 ```python
 # Espacio libre para exploración ad-hoc
 ```
-
-### Instrucciones importantes para el notebook
-- No duplicar lógica de los scripts: siempre importar desde `config.py`
-- No guardar outputs dentro del `.ipynb`
-- Agregar al `.gitignore`: outputs de celdas se limpian antes de commit
-- Agregar en README sección "Exploración interactiva":
-  `"Usar explore.ipynb para análisis ad-hoc. Ejecutar: jupyter notebook explore.ipynb"`
 
 ---
 
@@ -192,66 +189,19 @@ Crear un notebook Jupyter con las siguientes secciones como celdas markdown + c�
 ```yaml
 schedule:
   - cron: "0 6 1 1,4,7,10 *"   # trimestral: 1 ene, 1 abr, 1 jul, 1 oct — 06:00 UTC
-workflow_dispatch:               # permite correrlo manualmente desde GitHub UI
+workflow_dispatch:
 ```
 
 ### Job: update-sst
 - `runs-on: ubuntu-latest`
-
-**Steps:**
-
-1. Checkout del repo (`actions/checkout@v4`) con `fetch-depth: 0`
-2. Setup Python 3.11 (`actions/setup-python@v5`)
-3. Cache de pip (`actions/cache@v4`)
-   - key: `pip-${{ hashFiles('requirements.txt') }}`
-4. Instalar dependencias: `pip install -r requirements.txt`
-5. Correr pipeline completo:
-   ```bash
-   python 01_download.py
-   python 02_process.py
-   python 03_visualize.py
-   ```
-6. Commit y push automático:
-   - Git user: `"github-actions[bot]"`
-   - `git add data/runs/ figures/runs/`
-   - Mensaje dinámico: `"chore: SST update run {run_id} – {fecha_hoy}"`
-   - Push a branch `main`
-   - Solo hacer commit si hay cambios (`git diff --quiet` check)
-
-### Variables de entorno en el workflow
-```yaml
-env:
-  COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
-  COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
-```
+- Steps: checkout → Python 3.11 → pip cache → install → pipeline → commit+push condicional
+- Git user: `"github-actions[bot]"`
+- Mensaje: `"chore: SST update run {run_id} – {fecha_hoy}"`
+- Solo commitear si hay cambios (`git diff --staged --quiet`)
 
 ### Secrets requeridos
-Documentar en README — configurar en: `GitHub repo → Settings → Secrets → Actions`:
 - `COPERNICUSMARINE_SERVICE_USERNAME`
 - `COPERNICUSMARINE_SERVICE_PASSWORD`
-
----
-
-## README.md
-
-Generar con las siguientes secciones:
-
-- Descripción del proyecto (2–3 líneas)
-- Estructura de carpetas
-- Instalación y uso local:
-  ```bash
-  pip install -r requirements.txt
-  export COPERNICUSMARINE_SERVICE_USERNAME="tu_usuario"
-  export COPERNICUSMARINE_SERVICE_PASSWORD="tu_password"
-  python 01_download.py --test   # validar pipeline
-  python 01_download.py          # descarga completa
-  python 02_process.py
-  python 03_visualize.py
-  ```
-- Sección "Exploración interactiva": instrucciones para `explore.ipynb`
-- Sección "GitHub Action": pasos para configurar secrets
-- Frecuencia de actualización recomendada: **trimestral**
-- Créditos: datos de [Copernicus Marine Service](https://marine.copernicus.eu/) — OSTIA SST L4
 
 ---
 
@@ -279,4 +229,4 @@ jupyter>=1.0
 - Print statements de progreso en consola
 - Solo scripts `.py` ejecutables desde terminal (excepto `explore.ipynb`)
 - Manejo de errores con `try/except` en descarga y carga de archivos
-- Flag `--test` en `01_download.py` para validar pipeline con 2 años
+- Flag `--test` en `01_download.py` para validar pipeline con 2 años (2023–2024)

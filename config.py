@@ -43,5 +43,5 @@ REGIONES = {
     # Conversión de grados°minutos' a decimal: dd + mm/60
     "los_lagos":  {"lat": [-44.05, -40.22], "lon": [-74.82, -71.57]},  # 40°13'–44°03' S, 74°49'–71°34' W
     "aysen":      {"lat": [-49.27, -43.63], "lon": [-75.50, -71.10]},  # 43°38'–49°16' S, hasta el Pacífico
-    "magallanes": {"lat": [-56.50, -48.60], "lon": [-75.67, -66.42]},  # 48°36'–56°30' S, 75°40'–66°25' W
+    "magallanes": {"lat": [-56.50, -48.60], "lon": [-75.67, -70.00]},  # 48°36'–56°30' S, costa chilena hasta ~70°W
 }

@@ -31,7 +31,7 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 # ---------------------------------------------------------------------------
 # Producto Copernicus
 # ---------------------------------------------------------------------------
-DATASET_ID = "SST_GLO_SST_L4_REP_OBSERVATIONS_010_011"
+DATASET_ID = "METOFFICE-GLO-SST-L4-REP-OBS-SST"
 VARIABLE = "analysed_sst"
 FRECUENCIA_RECOMENDADA = "trimestral (Q1/Q2/Q3/Q4)"
 

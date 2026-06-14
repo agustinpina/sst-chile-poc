@@ -30,6 +30,7 @@ import pandas as pd
 import xarray as xr
 
 from config import DATASET_ID, FECHA_INICIO, VARIABLE
+from mapviz import add_coastline
 from run_point import (
     COLOR_NEG, COLOR_POS, DPI,
     figura_anomalia_anual, figura_heatmap_anomalia, figura_serie_anomalia,
@@ -158,10 +159,11 @@ def calcular_mensual_clima_anomalia(df_diario, baseline_start, baseline_end):
 
 def _mapa_base(figsize=(8, 7)):
     fig, ax = plt.subplots(figsize=figsize, subplot_kw={"projection": ccrs.PlateCarree()})
-    ax.coastlines(resolution="10m")
-    ax.add_feature(cfeature.LAND, facecolor="lightgray", zorder=0)
     ax.add_feature(cfeature.BORDERS, linestyle=":", zorder=1)
     ax.gridlines(draw_labels=True, alpha=0.3)
+    # Costa GSHHG full (encima del SST, ver mapviz.py): islas y canales
+    # del mar interior que Natural Earth 10m no resuelve.
+    add_coastline(ax, scale="full", zorder=3)
     return fig, ax
 
 

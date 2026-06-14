@@ -15,6 +15,7 @@ import xarray as xr
 from scipy import stats
 
 from config import DATA_DIR, FECHA_FIN, FIGURES_DIR, REGIONES, VARIABLE
+from mapviz import add_coastline
 
 DPI = 150
 COLORES = {"los_lagos": "#1f77b4", "aysen": "#2ca02c", "magallanes": "#d62728"}
@@ -124,10 +125,12 @@ def figura_mapa_region(nombre, bbox):
         ax=ax, cmap="RdYlBu_r", vmin=8, vmax=18,
         transform=ccrs.PlateCarree(), add_colorbar=False,
     )
-    ax.coastlines(resolution="10m")
-    ax.add_feature(cfeature.LAND, facecolor="lightgray", zorder=0)
     ax.add_feature(cfeature.BORDERS, linestyle=":", zorder=1)
     ax.gridlines(draw_labels=True, alpha=0.3)
+    # Costa GSHHG "high" (encima del SST, ver mapviz.py): mucho más detalle
+    # que Natural Earth 10m. "full" sería excesivamente lento/pesado para
+    # regiones tan extensas como Aysén/Magallanes.
+    add_coastline(ax, scale="high", zorder=3)
     fig.colorbar(im, ax=ax, label="SST (°C)", shrink=0.8, pad=0.08)
     ax.set_title(
         f"SST media {anio_inicio_datos}–{anio_fin_datos}\n{nombre.replace('_', ' ').title()}",

@@ -36,6 +36,7 @@ import copernicusmarine
 from scipy.ndimage import uniform_filter1d
 
 from config import DATASET_ID, FECHA_INICIO, VARIABLE
+from mapviz import add_coastline
 from run_point import DPI
 from run_site import (
     DATASET_ID_NRT,
@@ -266,10 +267,10 @@ def generar_gif(anom_smooth, lat_centroide, lon_centroide, nombre, figuras_dir):
         transform=ccrs.PlateCarree(), zorder=1,
     )
 
-    # Capas topográficas encima de la anomalía
-    ax.add_feature(cfeature.LAND,    facecolor="#c8c8c8",   zorder=3)
+    # Capas topográficas encima de la anomalía (costa GSHHG full, incluye
+    # islas y canales del mar interior que Natural Earth 10m no resuelve)
+    add_coastline(ax, scale="full", zorder=3)
     ax.add_feature(cfeature.BORDERS, linestyle=":", linewidth=0.6, zorder=3)
-    ax.coastlines(resolution="10m", zorder=4, linewidth=0.8, color="#333333")
 
     # Grilla
     gl = ax.gridlines(draw_labels=True, alpha=0.3, zorder=2,
@@ -354,9 +355,8 @@ def generar_gif(anom_smooth, lat_centroide, lon_centroide, nombre, figuras_dir):
         cmap="RdBu_r", vmin=-vmax, vmax=vmax,
         transform=ccrs.PlateCarree(), zorder=1,
     )
-    ax2.add_feature(cfeature.LAND,    facecolor="#c8c8c8",   zorder=3)
+    add_coastline(ax2, scale="full", zorder=3)
     ax2.add_feature(cfeature.BORDERS, linestyle=":", linewidth=0.6, zorder=3)
-    ax2.coastlines(resolution="10m", zorder=4, linewidth=0.8)
     gl2 = ax2.gridlines(draw_labels=True, alpha=0.3, zorder=2,
                         linewidth=0.5, color="gray")
     gl2.top_labels = False; gl2.right_labels = False

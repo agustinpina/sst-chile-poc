@@ -308,7 +308,7 @@ def generar_gif(anom_smooth, lat_centroide, lon_centroide, nombre, figuras_dir):
     )
     fuente_text = ax.text(
         0.99, 0.01,
-        "Datos: Copernicus Marine (OSTIA 0.05°)\nrun_chiloe_gif.py",
+        "Datos: Copernicus Marine (OSTIA 0.05°)",
         transform=ax.transAxes, fontsize=7,
         va="bottom", ha="right", color="#555555", zorder=7,
     )

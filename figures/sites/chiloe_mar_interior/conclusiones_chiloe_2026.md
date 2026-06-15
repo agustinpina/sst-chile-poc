@@ -67,7 +67,7 @@ enfriamiento sostenido del océano en la región.
 | Suavizado climatología | Ventana circular de 11 días (±5 días) |
 | Suavizado GIF | Media móvil trailing de 7 días por celda |
 | Detección MHW | Hobday et al. 2016 (p90, ≥ 5 días, gaps ≤ 2 días) |
-| Generado | 2026-06-14 |
+| Generado | 2026-06-15 |
 
 ---
 _Generado automáticamente por `run_chiloe_gif.py`_

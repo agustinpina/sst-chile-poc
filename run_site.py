@@ -58,11 +58,23 @@ def parsear_argumentos():
     parser = argparse.ArgumentParser(
         description="Análisis SST de sitio (mapas + anomalías + olas de calor marinas)."
     )
-    parser.add_argument("--lat", type=float, required=True)
-    parser.add_argument("--lon", type=float, required=True)
+    parser.add_argument("--lat", type=float, default=None,
+                        help="Latitud del centroide (requerido en modo centroide).")
+    parser.add_argument("--lon", type=float, default=None,
+                        help="Longitud del centroide (requerido en modo centroide).")
     parser.add_argument("--name", type=str, default="chiloe_chulin")
     parser.add_argument("--margen", type=float, default=0.30,
-                        help="Medio-ancho del bbox en grados alrededor del centroide (default: 0.30)")
+                        help="Medio-ancho del bbox en grados alrededor del centroide (default: 0.30). "
+                             "Solo en modo centroide.")
+    # ponytail: area mode averages spatially (skipna) instead of picking nearest cell;
+    #           upgrade to polygon mask only if land contamination becomes measurable.
+    parser.add_argument("--modo", choices=["centroide", "area"], default="centroide",
+                        help="centroide: celda más cercana al lat/lon; "
+                             "area: promedio espacial del bbox completo (skipna=land NaNs out).")
+    parser.add_argument("--lat-min", type=float, default=None)
+    parser.add_argument("--lat-max", type=float, default=None)
+    parser.add_argument("--lon-min", type=float, default=None)
+    parser.add_argument("--lon-max", type=float, default=None)
     parser.add_argument("--baseline-start", type=int, default=1993)
     parser.add_argument("--baseline-end", type=int, default=2020)
     return parser.parse_args()
@@ -76,21 +88,21 @@ def verificar_credenciales():
         print("   se intentará usar credenciales guardadas (`copernicusmarine login`).")
 
 
-def descargar_bbox(dataset_id, etiqueta, lat, lon, margen, fecha_inicio, fecha_fin,
-                    archivo_salida, data_dir):
+def descargar_bbox(dataset_id, etiqueta, lat_min, lat_max, lon_min, lon_max,
+                    fecha_inicio, fecha_fin, archivo_salida, data_dir):
     if archivo_salida.exists():
         print(f"   ↪ Ya existe {archivo_salida.name}, se reutiliza (no se vuelve a descargar).")
         return
-    print(f"→ Descargando {etiqueta} bbox (lat±{margen}, lon±{margen}, "
+    print(f"→ Descargando {etiqueta} bbox (lat[{lat_min},{lat_max}] lon[{lon_min},{lon_max}], "
           f"{fecha_inicio} → {fecha_fin})...")
     try:
         copernicusmarine.subset(
             dataset_id=dataset_id,
             variables=[VARIABLE],
-            minimum_longitude=lon - margen,
-            maximum_longitude=lon + margen,
-            minimum_latitude=lat - margen,
-            maximum_latitude=lat + margen,
+            minimum_longitude=lon_min,
+            maximum_longitude=lon_max,
+            minimum_latitude=lat_min,
+            maximum_latitude=lat_max,
             start_datetime=f"{fecha_inicio}T00:00:00",
             end_datetime=f"{fecha_fin}T23:59:59",
             output_filename=archivo_salida.name,
@@ -132,6 +144,18 @@ def serie_diaria_centroide(ds_rep, ds_nrt, lat, lon):
     df = pd.concat([df_rep[["time", "sst_celsius"]], df_nrt[["time", "sst_celsius"]]], ignore_index=True)
     df = df.dropna(subset=["sst_celsius"]).drop_duplicates(subset="time").sort_values("time").reset_index(drop=True)
     return df, (lat_celda, lon_celda)
+
+
+def serie_diaria_area(ds_rep, ds_nrt):
+    """Serie diaria del área completa (promedio espacial skipna) empalmando REP + NRT.
+    skipna=True descarta celdas de tierra/islas que son NaN en analysed_sst."""
+    corte = pd.Timestamp(REP_FECHA_FIN)
+    sst_rep = (ds_rep[VARIABLE] - 273.15).mean(dim=["latitude", "longitude"], skipna=True)
+    sst_nrt = (ds_nrt[VARIABLE] - 273.15).mean(dim=["latitude", "longitude"], skipna=True)
+    df_rep = sst_rep.sel(time=slice(None, corte)).to_dataframe(name="sst_celsius").reset_index()
+    df_nrt = sst_nrt.sel(time=slice(corte + pd.Timedelta(days=1), None)).to_dataframe(name="sst_celsius").reset_index()
+    df = pd.concat([df_rep[["time", "sst_celsius"]], df_nrt[["time", "sst_celsius"]]], ignore_index=True)
+    return df.dropna(subset=["sst_celsius"]).drop_duplicates(subset="time").sort_values("time").reset_index(drop=True)
 
 
 def calcular_mensual_clima_anomalia(df_diario, baseline_start, baseline_end):
@@ -299,12 +323,17 @@ def detectar_eventos_mhw(df_diario, clim_diaria,
         mascara = (df["time"] >= b["inicio"]) & (df["time"] <= b["fin"])
         intensidad = df.loc[mascara, "sst_celsius"] - df.loc[mascara, "clim"]
         df.loc[mascara, "en_evento_mhw"] = True
+        umbral_delta = (df.loc[mascara, "p90"] - df.loc[mascara, "clim"]).clip(lower=0.01)
+        ratio = intensidad.values / umbral_delta.values
+        cat_diaria = np.floor(ratio).clip(1, 4).astype(int)
         eventos.append({
             "inicio": b["inicio"].date().isoformat(),
             "fin": b["fin"].date().isoformat(),
             "duracion_dias": duracion,
             "intensidad_media_c": round(float(intensidad.mean()), 2),
             "intensidad_max_c": round(float(intensidad.max()), 2),
+            "categoria_max": int(cat_diaria.max()),
+            "dias_cat2plus": int((cat_diaria >= 2).sum()),
         })
     return pd.DataFrame(eventos), df
 
@@ -354,6 +383,24 @@ def main():
     args = parsear_argumentos()
     nombre = args.name
 
+    # Resolver bbox y display lat/lon según modo
+    if args.modo == "area":
+        for flag in ("lat_min", "lat_max", "lon_min", "lon_max"):
+            if getattr(args, flag) is None:
+                sys.exit(f"❌ --modo area requiere --{flag.replace('_', '-')}.")
+        lat_min, lat_max = args.lat_min, args.lat_max
+        lon_min, lon_max = args.lon_min, args.lon_max
+        display_lat = (lat_min + lat_max) / 2
+        display_lon = (lon_min + lon_max) / 2
+    else:
+        if args.lat is None or args.lon is None:
+            sys.exit("❌ --modo centroide requiere --lat y --lon.")
+        lat_min = args.lat - args.margen
+        lat_max = args.lat + args.margen
+        lon_min = args.lon - args.margen
+        lon_max = args.lon + args.margen
+        display_lat, display_lon = args.lat, args.lon
+
     data_dir = SITES_DATA_DIR / nombre
     figuras_dir = SITES_FIGURES_DIR / nombre
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -363,12 +410,14 @@ def main():
     archivo_nrt = data_dir / f"nrt_{nombre}_sst.nc"
     hoy = date.today().isoformat()
 
-    print(f"📍 Sitio: {nombre} (centroide lat={args.lat}, lon={args.lon}, "
-          f"bbox ±{args.margen}°)")
+    print(f"📍 Sitio: {nombre} (modo={args.modo}, "
+          f"bbox lat[{lat_min},{lat_max}] lon[{lon_min},{lon_max}])")
     verificar_credenciales()
-    descargar_bbox(DATASET_ID, "REP (1993→dic-2025)", args.lat, args.lon, args.margen,
+    descargar_bbox(DATASET_ID, "REP (1993→dic-2025)",
+                   lat_min, lat_max, lon_min, lon_max,
                    FECHA_INICIO, REP_FECHA_FIN, archivo_rep, data_dir)
-    descargar_bbox(DATASET_ID_NRT, "NRT (2026, near-real-time)", args.lat, args.lon, args.margen,
+    descargar_bbox(DATASET_ID_NRT, "NRT (2026, near-real-time)",
+                   lat_min, lat_max, lon_min, lon_max,
                    NRT_FECHA_INICIO, hoy, archivo_nrt, data_dir)
 
     print(f"→ Procesando {nombre}...")
@@ -376,10 +425,16 @@ def main():
     ds_nrt = xr.open_dataset(archivo_nrt)
     combinado = combinar_bbox(ds_rep, ds_nrt)
 
-    df_diario, celda = serie_diaria_centroide(ds_rep, ds_nrt, args.lat, args.lon)
-    print(f"   ↪ Celda del centroide: lat={celda[0]:.3f}, lon={celda[1]:.3f}")
-    print(f"   ↪ Serie diaria: {df_diario['time'].min():%Y-%m-%d} → {df_diario['time'].max():%Y-%m-%d} "
-          f"({len(df_diario)} días)")
+    if args.modo == "area":
+        df_diario = serie_diaria_area(ds_rep, ds_nrt)
+        print(f"   ↪ Modo área: promedio espacial de {df_diario['time'].min():%Y-%m-%d} "
+              f"→ {df_diario['time'].max():%Y-%m-%d} ({len(df_diario)} días)")
+    else:
+        df_diario, celda = serie_diaria_centroide(ds_rep, ds_nrt, args.lat, args.lon)
+        display_lat, display_lon = celda
+        print(f"   ↪ Celda del centroide: lat={display_lat:.3f}, lon={display_lon:.3f}")
+        print(f"   ↪ Serie diaria: {df_diario['time'].min():%Y-%m-%d} → {df_diario['time'].max():%Y-%m-%d} "
+              f"({len(df_diario)} días)")
 
     salida_diaria = data_dir / f"site_daily_{nombre}.csv"
     df_diario.to_csv(salida_diaria, index=False)
@@ -391,11 +446,12 @@ def main():
     print(f"   ✓ {salida_mensual.name} ({len(df_mensual)} filas)")
 
     print("🎨 Generando mapas espaciales...")
-    figura_mapa_sst_media(combinado, *celda, nombre, figuras_dir)
-    figura_mapa_anomalia(ds_rep, combinado, *celda, nombre, args.baseline_start, args.baseline_end, figuras_dir)
-    figura_mapa_tendencia(ds_rep, *celda, nombre, figuras_dir)
+    figura_mapa_sst_media(combinado, display_lat, display_lon, nombre, figuras_dir)
+    figura_mapa_anomalia(ds_rep, combinado, display_lat, display_lon, nombre,
+                         args.baseline_start, args.baseline_end, figuras_dir)
+    figura_mapa_tendencia(ds_rep, display_lat, display_lon, nombre, figuras_dir)
 
-    print("🎨 Generando serie de anomalías del centroide...")
+    print("🎨 Generando serie de anomalías...")
     figura_serie_anomalia(df_mensual, nombre, args.baseline_start, args.baseline_end, figuras_dir)
     figura_heatmap_anomalia(df_mensual, nombre, figuras_dir)
     figura_anomalia_anual(df_mensual, nombre, figuras_dir)

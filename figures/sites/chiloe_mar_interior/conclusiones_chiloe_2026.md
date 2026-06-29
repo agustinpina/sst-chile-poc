@@ -1,7 +1,7 @@
 # Anomalías térmicas de la SST en el mar interior de Chiloé — Enero–Junio 2026
 
 **Producto:** OSTIA SST L4 (METOFFICE-GLO-SST-L4, 0.05°) · REP (1993-2025) + NRT (2026)
-**Período analizado:** 01 de January de 2026 → 13 de June de 2026 (164 días)
+**Período analizado:** 01 de January de 2026 → 28 de June de 2026 (179 días)
 **Referencia climatológica:** 1993–2020
 **Área:** Mar interior de Chiloé
 (lat -43.6° – -41.4° S · lon -74.3° – -72.4° W)
@@ -62,12 +62,12 @@ enfriamiento sostenido del océano en la región.
 | Producto NRT | `METOFFICE-GLO-SST-L4-NRT-OBS-SST-V2` |
 | Resolución espacial | 0.05° (~5.5 km) |
 | Cobertura REP | 1993-01-01 → 2025-12-18 |
-| Cobertura NRT | 2025-12-01 → 2026-06-13 |
+| Cobertura NRT | 2025-12-01 → 2026-06-28 |
 | Baseline climatológico | 1993–2020 |
 | Suavizado climatología | Ventana circular de 11 días (±5 días) |
 | Suavizado GIF | Media móvil trailing de 7 días por celda |
 | Detección MHW | Hobday et al. 2016 (p90, ≥ 5 días, gaps ≤ 2 días) |
-| Generado | 2026-06-15 |
+| Generado | 2026-06-29 |
 
 ---
 _Generado automáticamente por `run_chiloe_gif.py`_

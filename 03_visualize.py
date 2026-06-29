@@ -3,21 +3,29 @@ Genera figuras a 150 dpi en figures/runs/{RUN_ID}/:
   fig1_serie_anual.png           → series anuales + tendencia por región
   fig2_ciclo_estacional.png      → climatología mensual con banda ±1 SD
   fig3_mapa_{region}.png (×3)    → mapa SST por región en figura separada
+  fig4_anomalia_2026.png         → anomalías diarias 2026 vs climatología 1993-2020
+  fig5_anomalia_{region}.gif (×3) → animación espacial de anomalías 2026
 """
 import sys
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
 from scipy import stats
 
-from config import DATA_DIR, FECHA_FIN, FIGURES_DIR, REGIONES, VARIABLE
+from config import (
+    BASELINE_END, BASELINE_START, DATA_DIR, FECHA_FIN, FIGURES_DIR, REGIONES, VARIABLE,
+)
 from mapviz import add_coastline
 
 DPI = 150
+DPI_GIF = 96
+GIF_FPS = 8
+ROLLING_DIAS = 7
 COLORES = {"los_lagos": "#1f77b4", "aysen": "#2ca02c", "magallanes": "#d62728"}
 ANIO_FIN = int(FECHA_FIN[:4])
 
@@ -149,6 +157,109 @@ def figura_mapas_por_region():
         figura_mapa_region(nombre, bbox)
 
 
+def figura_anomalia_2026():
+    """fig4: anomalía diaria 2026 por región (barchart + media móvil)."""
+    dfs = {}
+    for nombre in REGIONES:
+        ruta = DATA_DIR / f"sst_anom_2026_{nombre}.csv"
+        if ruta.exists():
+            dfs[nombre] = pd.read_csv(ruta, parse_dates=["time"])
+    if not dfs:
+        print("   ✗ No hay CSVs de anomalía 2026. Ejecuta 02_process.py primero.")
+        return
+
+    fig, axes = plt.subplots(len(REGIONES), 1, figsize=(13, 10), sharex=True)
+    for ax, nombre in zip(axes, REGIONES):
+        df = dfs.get(nombre)
+        if df is None or df.empty:
+            ax.set_visible(False)
+            continue
+        colores_bar = np.where(df["anomaly"] >= 0, "#d62728", "#1f77b4")
+        ax.bar(df["time"], df["anomaly"], width=1, color=colores_bar, alpha=0.55,
+               label="Anomalía diaria")
+        rolling = df["anomaly"].rolling(ROLLING_DIAS, min_periods=1, center=True).mean()
+        ax.plot(df["time"], rolling, color=COLORES[nombre], lw=2,
+                label=f"Media móvil {ROLLING_DIAS} días")
+        ax.axhline(0, color="black", lw=0.8)
+        ax.set_ylabel("Anomalía (°C)")
+        ultimo = df.dropna(subset=["anomaly"]).iloc[-1]
+        ax.set_title(
+            f"{nombre.replace('_', ' ').title()}  —  "
+            f"último dato: {pd.Timestamp(ultimo['time']).strftime('%Y-%m-%d')} "
+            f"({ultimo['anomaly']:+.2f} °C)"
+        )
+        ax.legend(loc="upper left", fontsize=8)
+        ax.grid(alpha=0.3)
+
+    fig.suptitle(
+        f"Anomalía SST 2026 vs. climatología {BASELINE_START}–{BASELINE_END}\n"
+        "Zonas salmonicultoras Chile",
+        fontsize=13,
+    )
+    fig.autofmt_xdate()
+    salida = FIGURES_DIR / "fig4_anomalia_2026.png"
+    fig.savefig(salida, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+    print(f"   ✓ {salida}")
+
+
+def figura_gif_anomalia_region(nombre, bbox):
+    """fig5: GIF animado de anomalía SST 2026 diaria por celda."""
+    archivo = DATA_DIR / f"sst_anom_2026_{nombre}.nc"
+    if not archivo.exists():
+        print(f"   ✗ No existe {archivo.name}, saltando GIF {nombre}.")
+        return
+
+    ds = xr.open_dataset(archivo)
+    anom = ds["anomalia"]
+    anom_smooth = anom.rolling(time=ROLLING_DIAS, min_periods=1, center=True).mean()
+    times = pd.DatetimeIndex(anom_smooth.time.values)
+    vmax = float(np.nanpercentile(np.abs(anom_smooth.values), 95)) or 1.0
+
+    fig, ax = plt.subplots(
+        figsize=(9, 8), subplot_kw={"projection": ccrs.PlateCarree()}
+    )
+    ax.set_extent([bbox["lon"][0], bbox["lon"][1], bbox["lat"][0], bbox["lat"][1]])
+    add_coastline(ax, scale="high", zorder=3)
+    ax.gridlines(draw_labels=True, alpha=0.3)
+
+    frame0 = anom_smooth.isel(time=0)
+    im = ax.pcolormesh(
+        frame0.longitude.values, frame0.latitude.values, frame0.values,
+        cmap="RdBu_r", vmin=-vmax, vmax=vmax,
+        transform=ccrs.PlateCarree(),
+    )
+    fig.colorbar(im, ax=ax,
+                 label=f"Anomalía SST (°C) vs. climatología {BASELINE_START}–{BASELINE_END}",
+                 shrink=0.8, pad=0.08)
+    titulo = ax.set_title("")
+    fecha_txt = ax.text(0.01, 0.02, "", transform=ax.transAxes,
+                        fontsize=11, fontweight="bold", color="black",
+                        bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7))
+
+    def update(i):
+        frame = anom_smooth.isel(time=i).values
+        im.set_array(frame.ravel())
+        titulo.set_text(
+            f"Anomalía SST 2026 – {nombre.replace('_', ' ').title()}\n"
+            f"(media móvil {ROLLING_DIAS} días · ref. {BASELINE_START}–{BASELINE_END})"
+        )
+        fecha_txt.set_text(times[i].strftime("%Y-%m-%d"))
+        return im, titulo, fecha_txt
+
+    ntimes = len(times)
+    print(f"   → Renderizando {ntimes} frames ({ntimes / GIF_FPS:.0f} s a {GIF_FPS} fps)…")
+    ani = animation.FuncAnimation(
+        fig, update, frames=ntimes, interval=1000 / GIF_FPS, blit=False
+    )
+    salida = FIGURES_DIR / f"fig5_anomalia_{nombre}.gif"
+    ani.save(str(salida), writer="pillow", fps=GIF_FPS,
+             savefig_kwargs={"dpi": DPI_GIF})
+    plt.close(fig)
+    ds.close()
+    print(f"   ✓ {salida}")
+
+
 def main():
     print("🎨 Generando figuras...")
     df_anual = cargar_csv_anual_combinado()
@@ -156,6 +267,10 @@ def main():
     figura_serie_anual(df_anual)
     figura_ciclo_estacional(df_mensual)
     figura_mapas_por_region()
+    figura_anomalia_2026()
+    print("🎬 Generando GIFs de anomalía 2026...")
+    for nombre, bbox in REGIONES.items():
+        figura_gif_anomalia_region(nombre, bbox)
     print(f"\n✅ Figuras en {FIGURES_DIR}")
 
 

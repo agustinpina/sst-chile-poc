@@ -16,7 +16,8 @@ from pathlib import Path
 import copernicusmarine
 
 from config import (
-    DATA_DIR, DATASET_ID, FECHA_FIN, FECHA_INICIO, REGIONES, RUN_ID, VARIABLE,
+    DATA_DIR, DATASET_ID, DATASET_ID_NRT, FECHA_FIN, FECHA_INICIO,
+    NRT_FECHA_INICIO, REGIONES, RUN_ID, VARIABLE,
 )
 
 
@@ -31,8 +32,9 @@ def parsear_argumentos():
 
 
 def verificar_run_existente():
-    """Aborta si ya existen NetCDFs en data/runs/{RUN_ID}/ para evitar sobreescritura."""
-    archivos_existentes = list(DATA_DIR.glob("*_sst.nc"))
+    """Aborta si ya existen NetCDFs REP en data/runs/{RUN_ID}/ para evitar sobreescritura."""
+    archivos_existentes = [DATA_DIR / f"{n}_sst.nc" for n in REGIONES
+                           if (DATA_DIR / f"{n}_sst.nc").exists()]
     if archivos_existentes:
         print(f"⚠️  El run {RUN_ID} ya tiene datos en {DATA_DIR}:")
         for archivo in archivos_existentes:
@@ -75,6 +77,33 @@ def descargar_region(nombre, bbox, fecha_inicio, fecha_fin):
         raise
 
 
+def descargar_nrt_region(nombre, bbox):
+    """Descarga el producto NRT para la región. Reutiliza si ya existe."""
+    archivo_salida = DATA_DIR / f"{nombre}_nrt.nc"
+    if archivo_salida.exists():
+        print(f"   ↪ Ya existe {archivo_salida.name}, se reutiliza.")
+        return
+    print(f"→ Descargando NRT {nombre} ({NRT_FECHA_INICIO} → {FECHA_FIN})...")
+    try:
+        copernicusmarine.subset(
+            dataset_id=DATASET_ID_NRT,
+            variables=[VARIABLE],
+            minimum_longitude=bbox["lon"][0],
+            maximum_longitude=bbox["lon"][1],
+            minimum_latitude=bbox["lat"][0],
+            maximum_latitude=bbox["lat"][1],
+            start_datetime=f"{NRT_FECHA_INICIO}T00:00:00",
+            end_datetime=f"{FECHA_FIN}T23:59:59",
+            output_filename=archivo_salida.name,
+            output_directory=str(DATA_DIR),
+        )
+        tamanio_mb = archivo_salida.stat().st_size / (1024 * 1024)
+        print(f"   ✓ {archivo_salida.name} ({tamanio_mb:.1f} MB)")
+    except Exception as exc:
+        print(f"   ✗ Error NRT {nombre}: {exc}")
+        raise
+
+
 def escribir_log(fecha_inicio, fecha_fin, tamanios):
     log_path = DATA_DIR / "run_log.txt"
     with log_path.open("w", encoding="utf-8") as fh:
@@ -104,8 +133,13 @@ def main():
     tamanios = {}
     for nombre, bbox in REGIONES.items():
         tamanios[nombre] = descargar_region(nombre, bbox, fecha_inicio, fecha_fin)
-
     escribir_log(fecha_inicio, fecha_fin, tamanios)
+
+    if not args.test:
+        print(f"\n📡 Descargando NRT ({NRT_FECHA_INICIO} → {FECHA_FIN})...")
+        for nombre, bbox in REGIONES.items():
+            descargar_nrt_region(nombre, bbox)
+
     print(f"\n✅ Descarga finalizada. Run: {RUN_ID}")
 
 

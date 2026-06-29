@@ -31,9 +31,18 @@ FIGURES_DIR.mkdir(parents=True, exist_ok=True)
 # ---------------------------------------------------------------------------
 # Producto Copernicus
 # ---------------------------------------------------------------------------
-DATASET_ID = "METOFFICE-GLO-SST-L4-REP-OBS-SST"
+DATASET_ID = "METOFFICE-GLO-SST-L4-REP-OBS-SST"      # reprocesado 1993–dic 2025
+DATASET_ID_NRT = "METOFFICE-GLO-SST-L4-NRT-OBS-SST-V2"  # tiempo casi-real 2025→hoy
 VARIABLE = "analysed_sst"
 FRECUENCIA_RECOMENDADA = "trimestral (Q1/Q2/Q3/Q4)"
+
+# Corte REP/NRT: el REP llega hasta esta fecha; el NRT empalma desde un poco antes.
+REP_FECHA_FIN   = "2025-12-18"
+NRT_FECHA_INICIO = "2025-12-01"
+
+# Período de referencia para climatologías
+BASELINE_START = 1993
+BASELINE_END   = 2020
 
 # ---------------------------------------------------------------------------
 # Regiones de interés (zonas salmonicultoras de Chile)

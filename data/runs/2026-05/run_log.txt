@@ -1,9 +1,0 @@
-Run ID: 2026-05
-Ejecutado: 2026-05-10T18:10:48
-Período: 2023-01-01 → 2024-12-31
-Producto: METOFFICE-GLO-SST-L4-REP-OBS-SST
-Variable: analysed_sst
-Archivos descargados:
-  - los_lagos_sst.nc: 7.0 MB
-  - aysen_sst.nc: 13.8 MB
-  - magallanes_sst.nc: 24.9 MB

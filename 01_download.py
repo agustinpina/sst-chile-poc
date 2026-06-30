@@ -44,12 +44,12 @@ def verificar_run_existente():
 
 
 def verificar_credenciales():
+    from pathlib import Path
+    creds_file = Path.home() / ".copernicusmarine" / ".copernicusmarine-credentials"
     user = os.getenv("COPERNICUSMARINE_SERVICE_USERNAME")
     pwd = os.getenv("COPERNICUSMARINE_SERVICE_PASSWORD")
-    if not user or not pwd:
-        print("❌ Faltan credenciales. Exporta:")
-        print("   export COPERNICUSMARINE_SERVICE_USERNAME=...")
-        print("   export COPERNICUSMARINE_SERVICE_PASSWORD=...")
+    if not (user and pwd) and not creds_file.exists():
+        print("❌ Faltan credenciales. Ejecuta: copernicusmarine login")
         sys.exit(1)
 
 

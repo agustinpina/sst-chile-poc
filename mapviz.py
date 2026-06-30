@@ -25,8 +25,10 @@ import cartopy.feature as cfeature
 from cartopy import config
 from cartopy.io.shapereader import GSHHSShpDownloader
 
-LAND_FACECOLOR = "#c8c8c8"
-COAST_EDGECOLOR = "#333333"
+from style import LAND_CREAM, INK
+
+LAND_FACECOLOR = LAND_CREAM   # ponytail: tierra crema, alineada con el tema visual
+COAST_EDGECOLOR = INK
 
 _GSHHS_MIRROR_URL = "https://www.soest.hawaii.edu/pwessel/gshhg/gshhg-shp-2.3.7.zip"
 

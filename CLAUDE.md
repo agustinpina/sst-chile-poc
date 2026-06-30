@@ -19,14 +19,15 @@ export COPERNICUSMARINE_SERVICE_PASSWORD="..."
 ## Comandos principales
 
 ```bash
-# Pipeline completo (en orden obligatorio)
+# Pipeline regional (en orden obligatorio)
 python 01_download.py --test   # descarga 2023-2024 (~46 MB, valida sin esperar horas)
 python 01_download.py          # descarga completa 1993 → dic 2025 (varios GB)
 python 02_process.py           # genera CSVs desde los NetCDFs del run actual
 python 03_visualize.py         # genera 5 PNGs desde los CSVs/NetCDFs del run actual
 
-# Notebook
-jupyter notebook explore.ipynb
+# Chequeo por centro de cultivo
+python run_centro.py --lat -42.6256807 --lon -73.0538369 --name centro_ancud
+# Salidas en output/<name>/: NetCDF, CSV mensual, 3 PNGs, resumen en consola
 
 # Verificar dependencias
 python -c "import copernicusmarine, xarray, cartopy, scipy; print('ok')"
@@ -38,7 +39,7 @@ python -c "import copernicusmarine, xarray, cartopy, scipy; print('ok')"
 
 `RUN_ID = "YYYY-MM"` (mes actual) determina todas las rutas. Cada run es inmutable: si `data/runs/{RUN_ID}/` ya contiene NetCDFs, `01_download.py` aborta en lugar de sobreescribir. Para regenerar un run: `rm -rf data/runs/{RUN_ID} figures/runs/{RUN_ID}`.
 
-Flujo de datos:
+Flujo de datos — pipeline regional:
 ```
 Copernicus API → [01_download.py] → data/runs/{RUN_ID}/*_sst.nc
                                               ↓
@@ -50,7 +51,16 @@ Copernicus API → [01_download.py] → data/runs/{RUN_ID}/*_sst.nc
                                                     figures/runs/{RUN_ID}/fig3_mapa_{region}.png (×3)
 ```
 
-`explore.ipynb` es de solo lectura sobre datos existentes — lee directamente los NetCDFs del run más reciente en `data/runs/`. No duplica lógica de los scripts.
+Flujo de datos — chequeo por centro:
+```
+Copernicus API → [run_centro.py] → output/<name>/centro_<name>_sst.nc
+                                              ↓
+                                   centro_monthly_<name>.csv
+                                   anom_serie.png / anom_heatmap.png / anom_anual.png
+                                   resumen térmico en consola
+```
+
+Todos los datos generados (`data/`, `figures/`, `output/`) están en `.gitignore` y se producen localmente.
 
 ## Datos importantes
 
@@ -61,9 +71,19 @@ Copernicus API → [01_download.py] → data/runs/{RUN_ID}/*_sst.nc
   - `los_lagos`: lat [-44.05, -40.22], lon [-74.82, -71.57]
   - `aysen`: lat [-49.27, -43.63], lon [-75.50, -71.10]
   - `magallanes`: lat [-56.50, -48.60], lon [-75.67, -70.00] (recortado a -70°W para excluir Argentina)
-- Los datos/figuras **sí se commitean** al repo (la GitHub Action los publica automáticamente cada trimestre).
+- Los datos y figuras **no se commitean** (están en `.gitignore`). Cada usuario los genera localmente.
 - El título de los mapas (fig3) se deriva de las fechas reales del NetCDF, no de `FECHA_FIN`.
 
-## GitHub Action
+## Agent skills
 
-`.github/workflows/update_sst.yml` corre el pipeline completo el día 1 de cada trimestre (ene/abr/jul/oct, 06:00 UTC). Lee credenciales desde GitHub Secrets `COPERNICUSMARINE_SERVICE_USERNAME` / `COPERNICUSMARINE_SERVICE_PASSWORD`. Solo hace commit si hay cambios nuevos.
+### Issue tracker
+
+Issues are tracked as GitHub issues in `agustinpina/sst-chile-poc` via the `gh` CLI; external PRs are also a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout (`CONTEXT.md` + `docs/adr/` at repo root). See `docs/agents/domain.md`.

@@ -11,7 +11,6 @@ __pycache__/
 
 # Jupyter
 .ipynb_checkpoints/
-explore.nbconvert.ipynb
 
 # IDEs
 .vscode/
@@ -22,5 +21,7 @@ explore.nbconvert.ipynb
 .env
 .envrc
 
-# Notas: las carpetas data/runs/ y figures/runs/ SÍ se commitean
-# (la GitHub Action las publica al repo cada trimestre)
+# Datos generados (producidos localmente por el pipeline)
+data/
+figures/
+output/

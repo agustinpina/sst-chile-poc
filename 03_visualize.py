@@ -21,6 +21,7 @@ from config import (
     BASELINE_END, BASELINE_START, DATA_DIR, FECHA_FIN, FIGURES_DIR, REGIONES, VARIABLE,
 )
 from mapviz import add_coastline
+from style import apply_style, add_credit, add_minmax, CREAM, CMAP_SST, CMAP_ANOM
 
 DPI = 150
 DPI_GIF = 96
@@ -129,22 +130,37 @@ def figura_mapa_region(nombre, bbox):
         figsize=(8, 7),
         subplot_kw={"projection": ccrs.PlateCarree()},
     )
+    # Fondo del axes crema para que las celdas sin dato se fundan con la tierra
+    ax.set_facecolor(CREAM)
+
     im = sst_promedio.plot(
-        ax=ax, cmap="RdYlBu_r", vmin=8, vmax=18,
+        ax=ax, cmap=CMAP_SST, vmin=8, vmax=18,
         transform=ccrs.PlateCarree(), add_colorbar=False,
     )
-    ax.add_feature(cfeature.BORDERS, linestyle=":", zorder=1)
-    ax.gridlines(draw_labels=True, alpha=0.3)
+    # Quitar BORDERS punteado (ruido visual; la costa GSHHG ya define el límite)
     # Costa GSHHG "high" (encima del SST, ver mapviz.py): mucho más detalle
     # que Natural Earth 10m. "full" sería excesivamente lento/pesado para
     # regiones tan extensas como Aysén/Magallanes.
     add_coastline(ax, scale="high", zorder=3)
-    fig.colorbar(im, ax=ax, label="SST (°C)", shrink=0.8, pad=0.08)
+
+    # Gridlines mínimas: solo bottom y left, sin etiquetas top/right
+    gl = ax.gridlines(draw_labels=True, alpha=0.15, linewidth=0.5, color="#2A2A2A")
+    gl.top_labels = False
+    gl.right_labels = False
+
+    # Colorbar slim, label vertical
+    cbar = fig.colorbar(im, ax=ax, label="SST (°C)", shrink=0.75, aspect=30, pad=0.05)
+    cbar.ax.yaxis.label.set_color("#2A2A2A")
+    cbar.ax.tick_params(colors="#2A2A2A", labelsize=8)
+
     ax.set_title(
-        f"SST media {anio_inicio_datos}–{anio_fin_datos}\n{nombre.replace('_', ' ').title()}",
+        f"SST media {anio_inicio_datos}–{anio_fin_datos} · {nombre.replace('_', ' ').title()}",
         fontsize=13,
     )
     ds.close()
+
+    add_minmax(fig, sst_promedio.values)
+    add_credit(fig)
 
     salida = FIGURES_DIR / f"fig3_mapa_{nombre}.png"
     fig.savefig(salida, dpi=DPI, bbox_inches="tight")
@@ -261,6 +277,7 @@ def figura_gif_anomalia_region(nombre, bbox):
 
 
 def main():
+    apply_style()
     print("🎨 Generando figuras...")
     df_anual = cargar_csv_anual_combinado()
     df_mensual = cargar_csv_mensual_combinado()

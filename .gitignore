@@ -12,10 +12,12 @@ __pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# IDEs
+# IDEs y tooling
 .vscode/
 .idea/
 .DS_Store
+.agents/
+.claude/
 
 # Credenciales y env
 .env

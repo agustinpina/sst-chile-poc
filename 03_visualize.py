@@ -5,6 +5,8 @@ Genera figuras a 150 dpi en figures/runs/{RUN_ID}/:
   fig3_mapa_{region}.png (×3)    → mapa SST por región en figura separada
   fig4_anomalia_2026.png         → anomalías diarias 2026 vs climatología 1993-2020
   fig5_anomalia_{region}.gif (×3) → animación espacial de anomalías 2026
+  fig6_anom_mensual_{region}.png (×3) → anomalía mensual, análogo GCH2025 Fig7
+  fig7_distribucion_{region}.png (×3) → distribución diaria por año, análogo GCH2025 Fig1
 """
 import sys
 
@@ -20,8 +22,11 @@ from scipy import stats
 from config import (
     BASELINE_END, BASELINE_START, DATA_DIR, FECHA_FIN, FIGURES_DIR, REGIONES, VARIABLE,
 )
-from mapviz import add_coastline
-from style import apply_style, add_credit, add_minmax, CREAM, CMAP_SST, CMAP_ANOM
+from mapviz import add_coastline, render_field, styled_colorbar
+from style import (
+    apply_style, add_credit, add_minmax, CREAM, CMAP_SST, CMAP_ANOM,
+    SST_VMIN, SST_VMAX, ANOM_ABS, CREDIT_GCH2025,
+)
 
 DPI = 150
 DPI_GIF = 96
@@ -132,12 +137,10 @@ def figura_mapa_region(nombre, bbox):
     )
     # Fondo del axes crema para que las celdas sin dato se fundan con la tierra
     ax.set_facecolor(CREAM)
+    ax.set_extent([bbox["lon"][0], bbox["lon"][1], bbox["lat"][0], bbox["lat"][1]])
 
-    im = sst_promedio.plot(
-        ax=ax, cmap=CMAP_SST, vmin=8, vmax=18,
-        transform=ccrs.PlateCarree(), add_colorbar=False,
-    )
-    # Quitar BORDERS punteado (ruido visual; la costa GSHHG ya define el límite)
+    im = render_field(ax, sst_promedio.longitude.values, sst_promedio.latitude.values,
+                      sst_promedio.values, CMAP_SST, SST_VMIN, SST_VMAX, ccrs.PlateCarree())
     # Costa GSHHG "high" (encima del SST, ver mapviz.py): mucho más detalle
     # que Natural Earth 10m. "full" sería excesivamente lento/pesado para
     # regiones tan extensas como Aysén/Magallanes.
@@ -148,10 +151,7 @@ def figura_mapa_region(nombre, bbox):
     gl.top_labels = False
     gl.right_labels = False
 
-    # Colorbar slim, label vertical
-    cbar = fig.colorbar(im, ax=ax, label="SST (°C)", shrink=0.75, aspect=30, pad=0.05)
-    cbar.ax.yaxis.label.set_color("#2A2A2A")
-    cbar.ax.tick_params(colors="#2A2A2A", labelsize=8)
+    styled_colorbar(fig, im, ax, "SST (°C)")
 
     ax.set_title(
         f"SST media {anio_inicio_datos}–{anio_fin_datos} · {nombre.replace('_', ' ').title()}",
@@ -219,6 +219,87 @@ def figura_anomalia_2026():
     print(f"   ✓ {salida}")
 
 
+def cargar_csv_anom_diaria(nombre):
+    ruta = DATA_DIR / f"sst_anom_daily_{nombre}.csv"
+    if not ruta.exists():
+        print(f"   ✗ No existe {ruta}, saltando (corre 02_process.py).")
+        return None
+    return pd.read_csv(ruta, parse_dates=["time"])
+
+
+def figura_anom_mensual_region(nombre):
+    """fig6: análogo a GCH2025 Fig7 — anomalía mensual (área roja/azul) por región."""
+    df = cargar_csv_anom_diaria(nombre)
+    if df is None or df.empty:
+        return
+
+    mensual = df.set_index("time")["anomaly"].resample("MS").mean().reset_index()
+
+    fig, ax = plt.subplots(figsize=(11, 5))
+    t, y = mensual["time"], mensual["anomaly"]
+    ax.fill_between(t, 0, y, where=(y >= 0), color="#c0392b", alpha=0.85, interpolate=True)
+    ax.fill_between(t, 0, y, where=(y < 0), color="#1f5c8c", alpha=0.85, interpolate=True)
+    ax.axhline(0, color="black", lw=0.8)
+    ax.set_ylabel("Anomalía SST (°C)")
+    ax.set_title(
+        f"Anomalía mensual SST vs. ref. {BASELINE_START}-{BASELINE_END} · "
+        f"{nombre.replace('_', ' ').title()}"
+    )
+    ax.grid(alpha=0.3)
+    add_credit(fig, nota=CREDIT_GCH2025)
+
+    salida = FIGURES_DIR / f"fig6_anom_mensual_{nombre}.png"
+    fig.savefig(salida, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+    print(f"   ✓ {salida}")
+
+
+def figura_distribucion_region(nombre):
+    """fig7: análogo a GCH2025 Fig1 — distribución (ridgeline) de anomalías diarias por año."""
+    df = cargar_csv_anom_diaria(nombre)
+    if df is None or df.empty:
+        return
+
+    df = df.dropna(subset=["anomaly"]).copy()
+    df["anio"] = df["time"].dt.year
+    anios = sorted(df["anio"].unique())
+    if len(anios) < 2:
+        print(f"   ✗ Muy pocos años para distribución en {nombre}, saltando.")
+        return
+
+    grilla = np.linspace(-4, 4, 400)
+    cmap = plt.cm.RdYlBu_r
+    norm = plt.Normalize(vmin=anios[0], vmax=anios[-1])
+    paso = 1.0  # separación vertical entre ridgelines
+
+    fig, ax = plt.subplots(figsize=(9, 0.35 * len(anios) + 2))
+    for i, anio in enumerate(anios):
+        valores = df.loc[df["anio"] == anio, "anomaly"].to_numpy()
+        if len(valores) < 5:
+            continue
+        base = i * paso
+        densidad = stats.gaussian_kde(valores)(grilla)
+        densidad = densidad / densidad.max() * paso * 0.9  # normaliza altura
+        ax.fill_between(grilla, base, base + densidad, color=cmap(norm(anio)), alpha=0.85, lw=0)
+        ax.plot(grilla, base + densidad, color="black", lw=0.4, alpha=0.5)
+
+    ax.axvline(0, color="black", lw=0.8, ls="--")
+    ax.set_yticks([i * paso for i in range(len(anios))])
+    ax.set_yticklabels([str(a) for a in anios], fontsize=7)
+    ax.set_xlabel("Anomalía SST (°C)")
+    ax.set_title(
+        f"Distribución diaria de anomalías SST vs. ref. {BASELINE_START}-{BASELINE_END} · "
+        f"{nombre.replace('_', ' ').title()}"
+    )
+    ax.grid(alpha=0.2, axis="x")
+    add_credit(fig, nota=CREDIT_GCH2025)
+
+    salida = FIGURES_DIR / f"fig7_distribucion_{nombre}.png"
+    fig.savefig(salida, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+    print(f"   ✓ {salida}")
+
+
 def figura_gif_anomalia_region(nombre, bbox):
     """fig5: GIF animado de anomalía SST 2026 diaria por celda."""
     archivo = DATA_DIR / f"sst_anom_2026_{nombre}.nc"
@@ -230,7 +311,6 @@ def figura_gif_anomalia_region(nombre, bbox):
     anom = ds["anomalia"]
     anom_smooth = anom.rolling(time=ROLLING_DIAS, min_periods=1, center=True).mean()
     times = pd.DatetimeIndex(anom_smooth.time.values)
-    vmax = float(np.nanpercentile(np.abs(anom_smooth.values), 95)) or 1.0
 
     fig, ax = plt.subplots(
         figsize=(9, 8), subplot_kw={"projection": ccrs.PlateCarree()}
@@ -240,14 +320,12 @@ def figura_gif_anomalia_region(nombre, bbox):
     ax.gridlines(draw_labels=True, alpha=0.3)
 
     frame0 = anom_smooth.isel(time=0)
-    im = ax.pcolormesh(
-        frame0.longitude.values, frame0.latitude.values, frame0.values,
-        cmap="RdBu_r", vmin=-vmax, vmax=vmax,
-        transform=ccrs.PlateCarree(),
-    )
-    fig.colorbar(im, ax=ax,
-                 label=f"Anomalía SST (°C) vs. climatología {BASELINE_START}–{BASELINE_END}",
-                 shrink=0.8, pad=0.08)
+    im = render_field(ax, frame0.longitude.values, frame0.latitude.values, frame0.values,
+                      CMAP_ANOM, -ANOM_ABS, ANOM_ABS, ccrs.PlateCarree())
+    styled_colorbar(fig, im, ax,
+                    f"Anomalía SST (°C) vs. climatología {BASELINE_START}–{BASELINE_END}",
+                    shrink=0.8, pad=0.08)
+    add_credit(fig)
     titulo = ax.set_title("")
     fecha_txt = ax.text(0.01, 0.02, "", transform=ax.transAxes,
                         fontsize=11, fontweight="bold", color="black",
@@ -285,6 +363,9 @@ def main():
     figura_ciclo_estacional(df_mensual)
     figura_mapas_por_region()
     figura_anomalia_2026()
+    for nombre in REGIONES:
+        figura_anom_mensual_region(nombre)
+        figura_distribucion_region(nombre)
     print("🎬 Generando GIFs de anomalía 2026...")
     for nombre, bbox in REGIONES.items():
         figura_gif_anomalia_region(nombre, bbox)

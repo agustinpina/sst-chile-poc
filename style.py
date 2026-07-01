@@ -2,13 +2,15 @@
 style.py — tema visual compartido para todas las figuras del pipeline SST.
 
 Uso:
-    from style import apply_style, add_credit, add_minmax, CREAM, LAND_CREAM, CMAP_SST, CMAP_ANOM
+    from style import apply_style, add_credit, add_minmax, CREAM, LAND_CREAM
+    from style import CMAP_SST, CMAP_ANOM, SST_VMIN, SST_VMAX, ANOM_ABS
     apply_style()          # llamar una vez en main()
     add_credit(fig)        # pie de figura con fuente
     add_minmax(fig, arr)   # anotación mín/máx (arrays de valores en °C)
 """
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 
 # ── Paleta ────────────────────────────────────────────────────────────────────
 CREAM      = "#F5F0E8"   # fondo figura y axes
@@ -18,10 +20,21 @@ INK        = "#2A2A2A"   # texto, ejes, spines
 # ── Colormaps ─────────────────────────────────────────────────────────────────
 # ponytail: constantes nombradas para cambiar paleta en un solo lugar si hace falta
 CMAP_SST  = "RdYlBu_r"
-CMAP_ANOM = "RdBu_r"
+CMAP_ANOM = LinearSegmentedColormap.from_list(
+    "sst_anomaly",
+    ["#1E4E99", "#4F8CC8", "#A9CBEA", "#F8F8F8", "#F6A58D", "#D53E2A", "#6A0000"],
+)
+
+# ── Escalas fijas (estándar oceanográfico: compartidas entre regiones y frames) ──
+SST_VMIN, SST_VMAX = 8, 18   # °C — SST absoluta; extend='both' captura extremos
+ANOM_ABS = 3                  # °C — anomalía simétrica ±3; extend='both'
 
 # ── Crédito ───────────────────────────────────────────────────────────────────
-CREDIT = "FUENTE: Copernicus Marine · OSTIA SST L4   ·   @agustinpina"
+CREDIT = "FUENTE: Copernicus Marine - OSTIA SST L4 - @agustinpina"
+CREDIT_GCH2025 = (
+    "Análogo a Copernicus Climate Change Service - Global Climate Highlights 2025 "
+    "(Fig1/Fig7) · SST vs. ref. 1993-2020"
+)
 
 
 def apply_style():
@@ -53,9 +66,14 @@ def apply_style():
     })
 
 
-def add_credit(fig, y=0.01):
-    """Añade una línea de crédito al pie izquierdo de la figura."""
-    fig.text(0.01, y, CREDIT, ha="left", va="bottom",
+def add_credit(fig, y=0.01, nota=None):
+    """Añade una línea de crédito al pie izquierdo de la figura.
+
+    Si se pasa `nota` (p.ej. CREDIT_GCH2025), se agrega como segunda línea
+    debajo del crédito base.
+    """
+    texto = CREDIT if nota is None else f"{CREDIT}\n{nota}"
+    fig.text(0.01, y, texto, ha="left", va="bottom",
              fontsize=7.5, color=INK, alpha=0.6)
 
 

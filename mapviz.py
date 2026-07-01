@@ -52,6 +52,29 @@ def _registrar_mirror_gshhg():
 _registrar_mirror_gshhg()
 
 
+def render_field(ax, lon, lat, values, cmap, vmin, vmax, transform, zorder=1):
+    """pcolormesh con shading='gouraud' (gradiente continuo, respeta el dato).
+
+    lon / lat pueden ser 1D (compatibles con values n×m) o 2D del mismo shape.
+    Dibujar la costa GSHHG encima (zorder=3) con add_coastline() tras esta llamada.
+    """
+    return ax.pcolormesh(
+        lon, lat, values,
+        shading="gouraud", cmap=cmap, vmin=vmin, vmax=vmax,
+        transform=transform, zorder=zorder,
+    )
+
+
+def styled_colorbar(fig, im, ax, label, extend="both",
+                    shrink=0.75, aspect=30, pad=0.05):
+    """Colorbar slim con estilo Manolin (INK, labelsize 8, puntas triangulares)."""
+    cbar = fig.colorbar(im, ax=ax, label=label, extend=extend,
+                        shrink=shrink, aspect=aspect, pad=pad)
+    cbar.ax.yaxis.label.set_color(INK)
+    cbar.ax.tick_params(colors=INK, labelsize=8)
+    return cbar
+
+
 def add_coastline(ax, scale="full", land_facecolor=LAND_FACECOLOR,
                    coast_color=COAST_EDGECOLOR, coast_lw=0.8, zorder=3):
     """Dibuja tierra rellena + línea de costa de alta resolución (GSHHG).

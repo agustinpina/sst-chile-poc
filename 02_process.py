@@ -93,6 +93,37 @@ def calcular_climatologia_diaria(sst_celsius):
     return clim.copy(data=vals_smooth)
 
 
+def procesar_anomalia_serie(nombre):
+    """Anomalía diaria promedio espacial para TODO el período (no solo 2026).
+    Alimenta fig6 (anomalía mensual) y fig7 (distribución) en 03_visualize.py."""
+    archivo_rep = DATA_DIR / f"{nombre}_sst.nc"
+    if not archivo_rep.exists():
+        print(f"   ✗ No existe {archivo_rep}, saltando serie de anomalía.")
+        return
+
+    print(f"→ Serie de anomalía diaria – {nombre}...")
+    sst = empalmar_rep_nrt(nombre)
+
+    tiene_baseline = bool(
+        sst.sel(time=slice(f"{BASELINE_START}-01-01", f"{BASELINE_END}-12-31")).time.size
+    )
+    if not tiene_baseline:
+        print(f"   ✗ Sin datos en baseline {BASELINE_START}-{BASELINE_END} "
+              f"(run --test u otro rango parcial), saltando serie de anomalía.")
+        return
+
+    clim = calcular_climatologia_diaria(sst)
+    anom = (sst.groupby("time.dayofyear") - clim).drop_vars("dayofyear")
+
+    df = pd.DataFrame({
+        "time": sst.time.values,
+        "anomaly": anom.mean(dim=["latitude", "longitude"], skipna=True).values,
+    })
+    salida_csv = DATA_DIR / f"sst_anom_daily_{nombre}.csv"
+    df.to_csv(salida_csv, index=False)
+    print(f"   ✓ {salida_csv.name} ({len(df)} filas)")
+
+
 def procesar_anomalia_2026(nombre):
     archivo_rep = DATA_DIR / f"{nombre}_sst.nc"
     archivo_nrt = DATA_DIR / f"{nombre}_nrt.nc"
@@ -140,6 +171,10 @@ def main():
 
     for nombre in REGIONES:
         procesar_region(nombre)
+
+    print()
+    for nombre in REGIONES:
+        procesar_anomalia_serie(nombre)
 
     print()
     for nombre in REGIONES:

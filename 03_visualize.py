@@ -35,6 +35,13 @@ DPI = 150
 DPI_GIF = 96
 GIF_FPS = 8
 ROLLING_DIAS = 7
+
+# fig3/fig4/fig7 se exportan pensados para LinkedIn (post nativo multi-imagen,
+# feed móvil): 4:5 portrait exacto en px = FIGSIZE_LI * DPI_LI = 1080×1350.
+# bbox_inches="tight" queda descartado en esas tres figuras porque recalcula
+# el tamaño de salida a partir del contenido dibujado — no garantiza el 4:5.
+DPI_LI = 150
+FIGSIZE_LI = (7.2, 9)
 COLORES = {"los_lagos": "#1f77b4", "aysen": "#2ca02c", "magallanes": "#d62728"}
 ANIO_FIN = int(FECHA_FIN[:4])
 
@@ -134,10 +141,12 @@ def figura_mapa_region(nombre, bbox):
 
     sst_promedio = sst.mean(dim="time", skipna=True)
 
+    # Formato 4:5 portrait para LinkedIn (feed móvil, ver DPI_LI/FIGSIZE_LI).
     fig, ax = plt.subplots(
-        figsize=(8, 7),
+        figsize=FIGSIZE_LI,
         subplot_kw={"projection": ccrs.PlateCarree()},
     )
+    fig.subplots_adjust(top=0.92, bottom=0.08, left=0.14, right=0.92)
     # Fondo del axes crema para que las celdas sin dato se fundan con la tierra
     ax.set_facecolor(CREAM)
     ax.set_extent([bbox["lon"][0], bbox["lon"][1], bbox["lat"][0], bbox["lat"][1]])
@@ -153,20 +162,24 @@ def figura_mapa_region(nombre, bbox):
     gl = ax.gridlines(draw_labels=True, alpha=0.15, linewidth=0.5, color="#2A2A2A")
     gl.top_labels = False
     gl.right_labels = False
+    gl.xlabel_style = {"fontsize": 10}
+    gl.ylabel_style = {"fontsize": 10}
 
-    styled_colorbar(fig, im, ax, "SST (°C)")
+    # Colorbar horizontal: en portrait no hay ancho para una barra vertical.
+    styled_colorbar(fig, im, ax, "SST (°C)", orientation="horizontal",
+                    shrink=0.9, pad=0.06)
 
     ax.set_title(
-        f"SST media {anio_inicio_datos}–{anio_fin_datos} · {nombre.replace('_', ' ').title()}",
-        fontsize=13,
+        f"SST media {anio_inicio_datos}–{anio_fin_datos}\n{nombre.replace('_', ' ').title()}",
+        fontsize=18,
     )
     ds.close()
 
-    add_minmax(fig, sst_promedio.values)
-    add_credit(fig)
+    add_minmax(fig, sst_promedio.values, y=0.03)
+    add_credit(fig, y=0.01)
 
     salida = FIGURES_DIR / f"fig3_mapa_{nombre}.png"
-    fig.savefig(salida, dpi=DPI, bbox_inches="tight")
+    fig.savefig(salida, dpi=DPI_LI)
     plt.close(fig)
     print(f"   ✓ {salida}")
 
@@ -174,6 +187,11 @@ def figura_mapa_region(nombre, bbox):
 def figura_mapas_por_region():
     for nombre, bbox in REGIONES.items():
         figura_mapa_region(nombre, bbox)
+
+
+# Aviso de El Niño emitido por NOAA. VERIFICAR fecha/redacción exacta antes de
+# publicar — es una afirmación factual, no derivada de los datos del pipeline.
+AVISO_ELNINO = pd.Timestamp("2026-06-11")
 
 
 def figura_anomalia_2026():
@@ -187,37 +205,69 @@ def figura_anomalia_2026():
         print("   ✗ No hay CSVs de anomalía 2026. Ejecuta 02_process.py primero.")
         return
 
-    fig, axes = plt.subplots(len(REGIONES), 1, figsize=(13, 10), sharex=True)
-    for ax, nombre in zip(axes, REGIONES):
+    # Márgenes explícitos (no los defaults de matplotlib, que dejaban ~12%
+    # de banda blanca a cada lado) — header, paneles y footer comparten LEFT.
+    LEFT, RIGHT = 0.055, 0.985
+    # sharey=True: misma escala de anomalía en los 3 paneles — con ejes
+    # independientes la variación visual entre regiones queda distorsionada.
+    fig, axes = plt.subplots(len(REGIONES), 1, figsize=(14, 11), sharex=True, sharey=True)
+    for i, (ax, nombre) in enumerate(zip(axes, REGIONES)):
         df = dfs.get(nombre)
         if df is None or df.empty:
             ax.set_visible(False)
             continue
         colores_bar = np.where(df["anomaly"] >= 0, "#d62728", "#1f77b4")
-        ax.bar(df["time"], df["anomaly"], width=1, color=colores_bar, alpha=0.55,
-               label="Anomalía diaria")
+        ax.bar(df["time"], df["anomaly"], width=1, color=colores_bar, alpha=0.55)
         rolling = df["anomaly"].rolling(ROLLING_DIAS, min_periods=1, center=True).mean()
-        ax.plot(df["time"], rolling, color=COLORES[nombre], lw=2,
-                label=f"Media móvil {ROLLING_DIAS} días")
+        ax.plot(df["time"], rolling, color="#2ca02c", lw=2)
         ax.axhline(0, color="black", lw=0.8)
+        ax.axvline(AVISO_ELNINO, color=COLOR_NINO, ls="--", lw=1.1, zorder=1)
         ax.set_ylabel("Anomalía (°C)")
         ultimo = df.dropna(subset=["anomaly"]).iloc[-1]
         ax.set_title(
             f"{nombre.replace('_', ' ').title()}  —  "
-            f"último dato: {pd.Timestamp(ultimo['time']).strftime('%Y-%m-%d')} "
-            f"({ultimo['anomaly']:+.2f} °C)"
+            f"último dato: {pd.Timestamp(ultimo['time']).strftime('%d %b %Y')} "
+            f"({ultimo['anomaly']:+.2f} °C)",
+            pad=8,
         )
-        ax.legend(loc="upper left", fontsize=8)
         ax.grid(alpha=0.3)
+        if i == 0:
+            ax.text(AVISO_ELNINO, ax.get_ylim()[1], " Aviso El Niño - NOAA 11 jun",
+                    ha="left", va="top", fontsize=7.5, color=COLOR_NINO)
 
-    fig.suptitle(
-        f"Anomalía SST 2026 vs. climatología {BASELINE_START}–{BASELINE_END}\n"
-        "Zonas salmonicultoras Chile",
-        fontsize=13,
-    )
+    # Header de 2 niveles vía fig.text() (en vez de un suptitle): título
+    # autoexplicativo + subtítulo con el detalle técnico (baseline y zonas).
+    # Ambos anclados a LEFT, igual que los títulos por-panel (axes.titlelocation
+    # "left" en style.py) y que el footer.
+    fig.text(LEFT, 0.965, "Evolución de las anomalías térmicas en el sur de Chile durante 2026",
+              ha="left", va="top", fontsize=19, fontweight="bold")
+    fig.text(LEFT, 0.928,
+              f"Anomalía vs. climatología {BASELINE_START}-{BASELINE_END}  —  "
+              "zonas salmonicultoras: Los Lagos, Aysén, Magallanes",
+              ha="left", va="top", fontsize=11.5)
+
+    # Leyenda a la derecha, sobre la misma línea de base que el subtítulo
+    # (no en fila propia) — no compite con el título ni con el título del
+    # primer panel, y no le resta altura a los paneles.
+    leyenda = [
+        Line2D([0], [0], color="#2ca02c", lw=2, label="Media móvil 7 días"),
+        mpatches.Patch(color="#d62728", alpha=0.55, label="Anomalía + (más cálido)"),
+        mpatches.Patch(color="#1f77b4", alpha=0.55, label="Anomalía − (más frío)"),
+    ]
+    fig.legend(handles=leyenda, loc="upper right", bbox_to_anchor=(RIGHT, 0.928),
+               ncol=3, frameon=False, fontsize=9)
+
     fig.autofmt_xdate()
+    # autofmt_xdate() reserva su propio margen inferior (más grande de lo
+    # necesario) para las fechas rotadas — se reafirma después junto con el
+    # resto de márgenes para que no quede una franja vacía entre el último
+    # panel y el footer, ni entre el header y el primer panel. El título de
+    # cada panel se dibuja *por encima* de "top" (pad + su propio alto de
+    # fuente) — top deja ese espacio libre para no solaparse con el header.
+    fig.subplots_adjust(top=0.865, bottom=0.11, left=LEFT, right=RIGHT, hspace=0.30)
+    add_credit(fig, y=0.02, x=LEFT)
     salida = FIGURES_DIR / "fig4_anomalia_2026.png"
-    fig.savefig(salida, dpi=DPI, bbox_inches="tight")
+    fig.savefig(salida, dpi=DPI, bbox_inches="tight", pad_inches=0.15)
     plt.close(fig)
     print(f"   ✓ {salida}")
 
@@ -245,7 +295,7 @@ def figura_anom_mensual_region(nombre):
     ax.axhline(0, color="black", lw=0.8)
     ax.set_ylabel("Anomalía SST (°C)")
     ax.set_title(
-        f"Anomalía mensual SST vs. ref. {BASELINE_START}-{BASELINE_END} · "
+        f"Anomalía mensual SST vs. ref. {BASELINE_START}-{BASELINE_END} - "
         f"{nombre.replace('_', ' ').title()}"
     )
     ax.grid(alpha=0.3)
@@ -265,11 +315,11 @@ EVENTOS_CLIMA = [
     (1999, "left",  "1998-2000\nLa Niña fuerte"),
     (2007, "right", "2006-07\nEl Niño fuerte"),
     (2008, "left",  "2007-08\nLa Niña fuerte"),
-    (2009, "right", "2009\nEl Niño moderado · FAN"),
+    (2009, "right", "2009\nEl Niño moderado - FAN"),
     (2011, "left",  "2010-11\nLa Niña fuerte"),
     (2016, "right", "2015-16 El Niño muy fuerte\n+ marea roja (~39.000 t)"),
     (2021, "left",  "2020-22 La Niña (triple)\n+ FAN 2021 (Comau/Aysén)"),
-    (2024, "right", "2023-24\nEl Niño fuerte · FAN"),
+    (2024, "right", "2023-24\nEl Niño fuerte - FAN"),
 ]
 FAN_YEARS = {2009, 2016, 2021, 2023, 2024}  # floraciones algales nocivas con mortalidad de salmón
 COLOR_NINO = "#B5321F"  # rojo — mismo tono que la flecha "más cálido"
@@ -296,7 +346,11 @@ def figura_distribucion_region(nombre):
     paso = 1.0       # separación vertical entre baselines
     altura = 5.5      # solapado tipo llama (estilo GCH2025 Fig1): pico ~5.5x la separación
 
-    fig, ax = plt.subplots(figsize=(8, 0.28 * len(anios) + 1))
+    # Formato 4:5 portrait fijo para LinkedIn (antes escalaba con el nº de años;
+    # con canvas fijo los ~33 años quedan algo más comprimidos verticalmente,
+    # compensado abajo con fuentes más grandes en ejes/leyenda/callouts).
+    fig, ax = plt.subplots(figsize=FIGSIZE_LI)
+    fig.subplots_adjust(top=0.86, bottom=0.14, left=0.14, right=0.94)
     n = len(anios)
     bases = {}  # año → altura Y de su baseline, para ubicar los callouts de eventos
     for i, anio in enumerate(anios):
@@ -328,33 +382,36 @@ def figura_distribucion_region(nombre):
     ax.set_ylim(0, (n - 1) * paso + paso * altura)
     paso_etiqueta = 3 if n > 15 else 1  # años más espaciados: menos ruido con curvas altas
     ax.set_yticks([(n - 1 - i) * paso for i in range(n) if anios[i] % paso_etiqueta == 0])
-    ax.set_yticklabels([str(a) for a in anios if a % paso_etiqueta == 0], fontsize=7.5)
+    ax.set_yticklabels([str(a) for a in anios if a % paso_etiqueta == 0], fontsize=9)
     ax.grid(False)
     ax.spines["left"].set_visible(False)
     ax.tick_params(axis="y", length=0)
-    ax.set_xlabel(f"Anomalía SST (°C) · ref. {BASELINE_START}-{BASELINE_END}")
+    ax.tick_params(axis="x", labelsize=9)
+    ax.set_xlabel(f"Anomalía SST (°C) - ref. {BASELINE_START}-{BASELINE_END}", fontsize=11)
     ax.text(0.0, 1.02, "← más frío que el promedio", transform=ax.transAxes,
-            ha="left", va="bottom", fontsize=8.5, color="#1E4E99", style="italic")
+            ha="left", va="bottom", fontsize=10, color="#1E4E99", style="italic")
     ax.text(1.0, 1.02, "más cálido que el promedio →", transform=ax.transAxes,
-            ha="right", va="bottom", fontsize=8.5, color="#B5321F", style="italic")
+            ha="right", va="bottom", fontsize=10, color="#B5321F", style="italic")
     ax.set_title(
-        f"Distribución diaria de anomalías SST · {nombre.replace('_', ' ').title()}",
-        pad=28,
+        f"Distribución diaria de anomalías SST\n{nombre.replace('_', ' ').title()}",
+        pad=20, fontsize=16,
     )
 
-    # Callouts de eventos climáticos (El Niño / La Niña) — texto + línea guía al año.
+    # Callouts de eventos climáticos (El Niño / La Niña) — texto dentro del
+    # canvas (pegado al borde, donde la densidad ya cayó a ~0), no fuera de
+    # los ejes: en 4:5 fijo no hay margen de figura para texto extra-axes.
     for anio, lado, texto in EVENTOS_CLIMA:
         if anio not in bases:      # la región puede no cubrir ese año
             continue
         base = bases[anio]
         color = COLOR_NINO if lado == "right" else COLOR_NINA
         if lado == "right":
-            xy, xytext, ha = (ANOM_LIM, base), (ANOM_LIM + 0.18, base), "left"
+            x, ha = ANOM_LIM - 0.05, "right"
         else:
-            xy, xytext, ha = (-ANOM_LIM, base), (-ANOM_LIM - 0.18, base), "right"
-        ax.annotate(texto, xy=xy, xytext=xytext, ha=ha, va="center", fontsize=6.3,
-                    color=color, annotation_clip=False, zorder=n + 1,
-                    arrowprops=dict(arrowstyle="-", color=color, lw=0.7, shrinkA=0, shrinkB=2))
+            x, ha = -ANOM_LIM + 0.05, "left"
+        ax.text(x, base, texto, ha=ha, va="center", fontsize=6.8,
+                color=color, zorder=n + 1,
+                bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.75))
 
     # Marcador FAN (floración algal nociva con mortalidad de salmón) sobre la línea cero.
     for anio in sorted(FAN_YEARS):
@@ -368,13 +425,13 @@ def figura_distribucion_region(nombre):
         Line2D([0], [0], marker="D", color="none", mec="white", mfc=COLOR_FAN, ms=6,
                label="Floración algal nociva (FAN)"),
     ]
-    ax.legend(handles=leyenda, loc="lower center", bbox_to_anchor=(0.5, -0.16),
-              ncol=3, frameon=False, fontsize=7.5)
+    ax.legend(handles=leyenda, loc="lower center", bbox_to_anchor=(0.5, -0.1),
+              ncol=3, frameon=False, fontsize=7.2)
 
-    add_credit(fig, nota=CREDIT_GCH2025)
+    add_credit(fig, y=0.005, nota=CREDIT_GCH2025)
 
     salida = FIGURES_DIR / f"fig7_distribucion_{nombre}.png"
-    fig.savefig(salida, dpi=DPI, bbox_inches="tight")
+    fig.savefig(salida, dpi=DPI_LI)
     plt.close(fig)
     print(f"   ✓ {salida}")
 
@@ -414,8 +471,8 @@ def figura_gif_anomalia_region(nombre, bbox):
         frame = anom_smooth.isel(time=i).values
         im.set_array(frame.ravel())
         titulo.set_text(
-            f"Anomalía SST 2026 – {nombre.replace('_', ' ').title()}\n"
-            f"(media móvil {ROLLING_DIAS} días · ref. {BASELINE_START}–{BASELINE_END})"
+            f"Anomalía SST 2026 - {nombre.replace('_', ' ').title()}\n"
+            f"(media móvil {ROLLING_DIAS} días - ref. {BASELINE_START}-{BASELINE_END})"
         )
         fecha_txt.set_text(times[i].strftime("%Y-%m-%d"))
         return im, titulo, fecha_txt

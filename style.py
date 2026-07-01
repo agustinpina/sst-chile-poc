@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 
 # ── Paleta ────────────────────────────────────────────────────────────────────
-CREAM      = "#F5F0E8"   # fondo figura y axes
+CREAM      = "#FAF9F6"   # fondo figura y axes
 LAND_CREAM = "#EDE8DF"   # tierra (ligeramente más oscura que el fondo)
 INK        = "#2A2A2A"   # texto, ejes, spines
 
@@ -30,10 +30,10 @@ SST_VMIN, SST_VMAX = 8, 18   # °C — SST absoluta; extend='both' captura extre
 ANOM_ABS = 3                  # °C — anomalía simétrica ±3; extend='both'
 
 # ── Crédito ───────────────────────────────────────────────────────────────────
-CREDIT = "FUENTE: Copernicus Marine - OSTIA SST L4 - @agustinpina"
+CREDIT = "FUENTE: Copernicus Marine - OSTIA SST L4 - linkedin.com/in/agustn-pina"
 CREDIT_GCH2025 = (
     "Análogo a Copernicus Climate Change Service - Global Climate Highlights 2025 "
-    "(Fig1/Fig7) · SST vs. ref. 1993-2020"
+    "(Fig1/Fig7) - SST vs. ref. 1993-2020"
 )
 
 
@@ -66,25 +66,26 @@ def apply_style():
     })
 
 
-def add_credit(fig, y=0.01, nota=None):
+def add_credit(fig, y=0.01, nota=None, x=0.01):
     """Añade una línea de crédito al pie izquierdo de la figura.
 
     Si se pasa `nota` (p.ej. CREDIT_GCH2025), se agrega como segunda línea
-    debajo del crédito base.
+    debajo del crédito base. `x` permite alinearlo con un header que no
+    use el margen por defecto (p.ej. figura_anomalia_2026).
     """
     texto = CREDIT if nota is None else f"{CREDIT}\n{nota}"
-    fig.text(0.01, y, texto, ha="left", va="bottom",
+    fig.text(x, y, texto, ha="left", va="bottom",
              fontsize=7.5, color=INK, alpha=0.6)
 
 
 def add_minmax(fig, arr, y=0.01):
-    """Añade 'mín. X.XX °C · máx. Y.YY °C' al pie derecho de la figura.
+    """Añade 'mín. X.XX °C - máx. Y.YY °C' al pie derecho de la figura.
 
     arr puede ser un ndarray de valores ya en °C (NaN ignorados).
     """
     vals = np.asarray(arr, dtype=float)
     vmin = np.nanmin(vals)
     vmax = np.nanmax(vals)
-    txt = f"mín. {vmin:.2f} °C · máx. {vmax:.2f} °C"
+    txt = f"mín. {vmin:.2f} °C - máx. {vmax:.2f} °C"
     fig.text(0.99, y, txt, ha="right", va="bottom",
              fontsize=7.5, color=INK, alpha=0.6)

@@ -66,11 +66,17 @@ def render_field(ax, lon, lat, values, cmap, vmin, vmax, transform, zorder=1):
 
 
 def styled_colorbar(fig, im, ax, label, extend="both",
-                    shrink=0.75, aspect=30, pad=0.05):
-    """Colorbar slim con estilo Manolin (INK, labelsize 8, puntas triangulares)."""
+                    shrink=0.75, aspect=30, pad=0.05, orientation="vertical"):
+    """Colorbar slim con estilo Manolin (INK, labelsize 8, puntas triangulares).
+
+    orientation="horizontal" para layouts portrait (ej. figuras LinkedIn 4:5)
+    donde no hay espacio para una barra vertical a la derecha.
+    """
     cbar = fig.colorbar(im, ax=ax, label=label, extend=extend,
-                        shrink=shrink, aspect=aspect, pad=pad)
-    cbar.ax.yaxis.label.set_color(INK)
+                        shrink=shrink, aspect=aspect, pad=pad,
+                        orientation=orientation)
+    label_axis = cbar.ax.xaxis if orientation == "horizontal" else cbar.ax.yaxis
+    label_axis.label.set_color(INK)
     cbar.ax.tick_params(colors=INK, labelsize=8)
     return cbar
 

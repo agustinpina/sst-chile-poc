@@ -13,7 +13,10 @@ import sys
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import matplotlib.animation as animation
+import matplotlib.patches as mpatches
+import matplotlib.path as mpath
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -254,6 +257,26 @@ def figura_anom_mensual_region(nombre):
     print(f"   ✓ {salida}")
 
 
+# Eventos climáticos para anotar fig7 (años verificados vía ONI/NOAA y prensa especializada
+# en floraciones algales nocivas — ver docs/agents o el plan de esta feature). Se combinan
+# eventos del mismo año para no chocar en el eje. El Niño→derecha/rojo, La Niña→izquierda/azul.
+EVENTOS_CLIMA = [
+    (1998, "right", "1997-98\nEl Niño muy fuerte"),
+    (1999, "left",  "1998-2000\nLa Niña fuerte"),
+    (2007, "right", "2006-07\nEl Niño fuerte"),
+    (2008, "left",  "2007-08\nLa Niña fuerte"),
+    (2009, "right", "2009\nEl Niño moderado · FAN"),
+    (2011, "left",  "2010-11\nLa Niña fuerte"),
+    (2016, "right", "2015-16 El Niño muy fuerte\n+ marea roja (~39.000 t)"),
+    (2021, "left",  "2020-22 La Niña (triple)\n+ FAN 2021 (Comau/Aysén)"),
+    (2024, "right", "2023-24\nEl Niño fuerte · FAN"),
+]
+FAN_YEARS = {2009, 2016, 2021, 2023, 2024}  # floraciones algales nocivas con mortalidad de salmón
+COLOR_NINO = "#B5321F"  # rojo — mismo tono que la flecha "más cálido"
+COLOR_NINA = "#1E4E99"  # azul — mismo tono que la flecha "más frío"
+COLOR_FAN = "#E67E22"   # naranja, distinto de la paleta de anomalía (evita confusión de color)
+
+
 def figura_distribucion_region(nombre):
     """fig7: análogo a GCH2025 Fig1 — distribución (ridgeline) de anomalías diarias por año."""
     df = cargar_csv_anom_diaria(nombre)
@@ -267,31 +290,87 @@ def figura_distribucion_region(nombre):
         print(f"   ✗ Muy pocos años para distribución en {nombre}, saltando.")
         return
 
-    grilla = np.linspace(-4, 4, 400)
-    cmap = plt.cm.RdYlBu_r
-    norm = plt.Normalize(vmin=anios[0], vmax=anios[-1])
-    paso = 1.0  # separación vertical entre ridgelines
+    ANOM_LIM = 2.0   # rango real de datos (~-1.5 a +1.9°C) cabe holgado en ±2
+    grilla = np.linspace(-ANOM_LIM, ANOM_LIM, 400)
+    gnorm = plt.Normalize(vmin=-ANOM_LIM, vmax=ANOM_LIM)  # color = magnitud de la anomalía
+    paso = 1.0       # separación vertical entre baselines
+    altura = 5.5      # solapado tipo llama (estilo GCH2025 Fig1): pico ~5.5x la separación
 
-    fig, ax = plt.subplots(figsize=(9, 0.35 * len(anios) + 2))
+    fig, ax = plt.subplots(figsize=(8, 0.28 * len(anios) + 1))
+    n = len(anios)
+    bases = {}  # año → altura Y de su baseline, para ubicar los callouts de eventos
     for i, anio in enumerate(anios):
         valores = df.loc[df["anio"] == anio, "anomaly"].to_numpy()
         if len(valores) < 5:
             continue
-        base = i * paso
+        # 1993 arriba, año más reciente abajo; zorder creciente hacia abajo
+        # para que cada ridge tape parcialmente al de arriba (oclusión joyplot).
+        base = (n - 1 - i) * paso
+        bases[anio] = base
         densidad = stats.gaussian_kde(valores)(grilla)
-        densidad = densidad / densidad.max() * paso * 0.9  # normaliza altura
-        ax.fill_between(grilla, base, base + densidad, color=cmap(norm(anio)), alpha=0.85, lw=0)
-        ax.plot(grilla, base + densidad, color="black", lw=0.4, alpha=0.5)
+        densidad = densidad / densidad.max() * paso * altura
 
-    ax.axvline(0, color="black", lw=0.8, ls="--")
-    ax.set_yticks([i * paso for i in range(len(anios))])
-    ax.set_yticklabels([str(a) for a in anios], fontsize=7)
-    ax.set_xlabel("Anomalía SST (°C)")
+        im = ax.imshow(
+            grilla.reshape(1, -1), extent=[grilla[0], grilla[-1], base, base + densidad.max()],
+            aspect="auto", origin="lower", cmap=CMAP_ANOM, norm=gnorm, zorder=i,
+        )
+        verts = np.column_stack([
+            np.r_[grilla, grilla[::-1]],
+            np.r_[base + densidad, np.full_like(grilla, base)],
+        ])
+        clip = mpatches.PathPatch(mpath.Path(verts), transform=ax.transData, fc="none", lw=0)
+        ax.add_patch(clip)
+        im.set_clip_path(clip)
+        ax.plot(grilla, base + densidad, color="black", lw=0.4, alpha=0.5, zorder=i)
+
+    ax.axvline(0, color="black", lw=0.8, zorder=n)
+    ax.set_xlim(-ANOM_LIM, ANOM_LIM)
+    ax.set_ylim(0, (n - 1) * paso + paso * altura)
+    paso_etiqueta = 3 if n > 15 else 1  # años más espaciados: menos ruido con curvas altas
+    ax.set_yticks([(n - 1 - i) * paso for i in range(n) if anios[i] % paso_etiqueta == 0])
+    ax.set_yticklabels([str(a) for a in anios if a % paso_etiqueta == 0], fontsize=7.5)
+    ax.grid(False)
+    ax.spines["left"].set_visible(False)
+    ax.tick_params(axis="y", length=0)
+    ax.set_xlabel(f"Anomalía SST (°C) · ref. {BASELINE_START}-{BASELINE_END}")
+    ax.text(0.0, 1.02, "← más frío que el promedio", transform=ax.transAxes,
+            ha="left", va="bottom", fontsize=8.5, color="#1E4E99", style="italic")
+    ax.text(1.0, 1.02, "más cálido que el promedio →", transform=ax.transAxes,
+            ha="right", va="bottom", fontsize=8.5, color="#B5321F", style="italic")
     ax.set_title(
-        f"Distribución diaria de anomalías SST vs. ref. {BASELINE_START}-{BASELINE_END} · "
-        f"{nombre.replace('_', ' ').title()}"
+        f"Distribución diaria de anomalías SST · {nombre.replace('_', ' ').title()}",
+        pad=28,
     )
-    ax.grid(alpha=0.2, axis="x")
+
+    # Callouts de eventos climáticos (El Niño / La Niña) — texto + línea guía al año.
+    for anio, lado, texto in EVENTOS_CLIMA:
+        if anio not in bases:      # la región puede no cubrir ese año
+            continue
+        base = bases[anio]
+        color = COLOR_NINO if lado == "right" else COLOR_NINA
+        if lado == "right":
+            xy, xytext, ha = (ANOM_LIM, base), (ANOM_LIM + 0.18, base), "left"
+        else:
+            xy, xytext, ha = (-ANOM_LIM, base), (-ANOM_LIM - 0.18, base), "right"
+        ax.annotate(texto, xy=xy, xytext=xytext, ha=ha, va="center", fontsize=6.3,
+                    color=color, annotation_clip=False, zorder=n + 1,
+                    arrowprops=dict(arrowstyle="-", color=color, lw=0.7, shrinkA=0, shrinkB=2))
+
+    # Marcador FAN (floración algal nociva con mortalidad de salmón) sobre la línea cero.
+    for anio in sorted(FAN_YEARS):
+        if anio in bases:
+            ax.plot(0, bases[anio], marker="D", ms=5, color=COLOR_FAN,
+                    mec="white", mew=0.6, zorder=n + 2)
+
+    leyenda = [
+        Line2D([0], [0], color=COLOR_NINO, lw=1.2, label="El Niño"),
+        Line2D([0], [0], color=COLOR_NINA, lw=1.2, label="La Niña"),
+        Line2D([0], [0], marker="D", color="none", mec="white", mfc=COLOR_FAN, ms=6,
+               label="Floración algal nociva (FAN)"),
+    ]
+    ax.legend(handles=leyenda, loc="lower center", bbox_to_anchor=(0.5, -0.16),
+              ncol=3, frameon=False, fontsize=7.5)
+
     add_credit(fig, nota=CREDIT_GCH2025)
 
     salida = FIGURES_DIR / f"fig7_distribucion_{nombre}.png"
@@ -347,8 +426,7 @@ def figura_gif_anomalia_region(nombre, bbox):
         fig, update, frames=ntimes, interval=1000 / GIF_FPS, blit=False
     )
     salida = FIGURES_DIR / f"fig5_anomalia_{nombre}.gif"
-    ani.save(str(salida), writer="pillow", fps=GIF_FPS,
-             savefig_kwargs={"dpi": DPI_GIF})
+    ani.save(str(salida), writer="pillow", fps=GIF_FPS, dpi=DPI_GIF)
     plt.close(fig)
     ds.close()
     print(f"   ✓ {salida}")
